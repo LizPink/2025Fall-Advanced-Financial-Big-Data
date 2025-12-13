@@ -3,7 +3,7 @@
 数据变换工具：
 - none：不处理
 - diff：一阶差分
-- log_diff：对数差分（适用于严格为正的价格/指数）
+- log_diff：对数差分（要求>0）
 - pct_change：简单收益率
 """
 
@@ -31,5 +31,4 @@ def apply_transform(s: pd.Series, transform: str) -> pd.Series:
     if transform == "log_diff":
         s2 = s.where(s > 0)  # 非正值无法取对数
         return np.log(s2).diff()
-
-    raise RuntimeError("transform 分支未覆盖（理论上不会发生）")
+    raise RuntimeError("transform 分支未覆盖")

@@ -4,9 +4,9 @@
 说明：
 1) 你们采用 USD 作为日度主时间轴；
 2) 标签采用 shift-y：y_t = r_{t+h}；
-3) 低频变量（按月/按季）先施加发布滞后（默认：月滞后1、季滞后1）再映射到日度并 forward fill；
-4) 跨市场节假日缺口采用 carry-forward（即 forward fill）；
-5) 每个变量需要显式指定 transform（none/diff/log_diff/pct_change）。
+3) 低频（月/季）变量：先施加发布滞后（月滞后1、季滞后1），再映射到日度并 forward fill；
+4) 缺口/跨市场节假日：carry-forward（forward fill）；
+5) 每个变量需显式指定 transform：none/diff/log_diff/pct_change。
 """
 
 from __future__ import annotations
@@ -21,26 +21,22 @@ RUN = {
 
     # 输出目录（会在当前脚本同级创建 Data/）
     "output_dir": "Data",
-
-    # 输出文件命名：Data_D_X，其中 X 为预测步长（交易日）
     "dataset_prefix": "Data_D",
-    "forecast_horizon_days": 1,  # X
+    "forecast_horizon_days": 1,
 
-    # 因变量（默认 USD）
     "y_sheet": "USD",
-    "y_value_col": "收盘",
     "y_date_col": "日期",
+    "y_value_col": "收盘",
 
-    # 是否输出图表（你们当前 Appendix B 未规划，默认关闭）
+    # 是否输出图表（图1-图5）
     "enable_plots": True,
 
-    # 是否保留周末（若USD含周末行，建议默认剔除）
+    # 是否保留周末（一般建议 False）
     "keep_weekends": False,
-
 }
 
 # ==============================
-# 技术指标参数（默认值，可修改）
+# 技术指标参数（可改）
 # ==============================
 FEATURES = {
     # 日度技术指标窗口（交易日）
@@ -50,12 +46,30 @@ FEATURES = {
 }
 
 # ==============================
-# 变量定义（建议按“变量一行”维护）
-# - name: 输出列名
-# - sheet: 来源 sheet
-# - freq: daily/monthly/quarterly
-# - date_col/value_col: 原始列名
-# - transform: none/diff/log_diff/pct_change
+# 绘图参数（按你们反馈新增）
+# ==============================
+PLOTS = {
+    "font_family_candidates": [
+        "Microsoft YaHei",   # Windows
+        "SimHei",            # Windows
+        "PingFang SC",       # macOS
+        "Noto Sans CJK SC",  # Linux
+        "Arial Unicode MS",
+    ],
+    "base_font_size": 11,
+    "dpi": 220,
+
+    # 图2：关键外生变量（每个变量一个子图）
+    "plot2_vars": ["VIX", "US_TermSpread", "WTI", "GOLD", "EPU_D"],
+
+    # 图3：相关性热力图变量（按论文/答辩需要自行精简）
+    "plot3_vars": ["USD_1", "VIX", "US_TermSpread", "WTI", "GOLD", "EPU_D", "USD_EUR", "USD_JPY", "USD_GBP", "USD_CNY"],
+
+    "plot4_top_n": 30,
+}
+
+# ==============================
+# 变量定义
 # ==============================
 VARIABLES = [
     # -------- 日度：汇率与资产价格/指数 --------
@@ -75,9 +89,9 @@ VARIABLES = [
     {"name": "CN_Mkt_Index","sheet": "CN_Mkt_Index","freq": "daily", "date_col": "日期", "value_col": "收盘", "transform": "log_diff"},
     {"name": "HK_Mkt_Index","sheet": "HK_Mkt_Index","freq": "daily", "date_col": "日期", "value_col": "收盘", "transform": "log_diff"},
 
-    # 情绪/不确定性（主线建议：VIX 用水平；EPU 用 log_diff）
-    {"name": "VIX",         "sheet": "VIX",         "freq": "daily", "date_col": "日期", "value_col": "收盘", "transform": "none"},
-    {"name": "EPU_D",       "sheet": "EPU_Day",     "freq": "daily", "date_col": "Date", "value_col": "EPU_D", "transform": "log_diff"},
+    # ---- 日度：情绪/不确定性 ----
+    {"name": "VIX",   "sheet": "VIX",     "freq": "daily", "date_col": "日期", "value_col": "收盘", "transform": "none"},
+    {"name": "EPU_D", "sheet": "EPU_Day", "freq": "daily", "date_col": "Date", "value_col": "EPU_D", "transform": "log_diff"},
 
     # -------- 日度：利率（默认用水平）--------
     {"name": "US_3M",  "sheet": "US_3M",  "freq": "daily", "date_col": "日期", "value_col": "收盘", "transform": "none"},

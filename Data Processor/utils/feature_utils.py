@@ -34,12 +34,11 @@ def compute_technical_indicators(
         ma = close.rolling(window=w, min_periods=w).mean()
         std = close.rolling(window=w, min_periods=w).std()
         feats[f"MA_gap_{w}"] = close / ma - 1.0
-        feats[f"BBW_{w}"] = (4.0 * std) / ma
+        feats[f"BBW_{w}"] = (4.0 * std) / ma  # k=2 => 4σ, 再除以MA归一化
 
     # 收益率滞后项
     r = compute_usd_return(close)
     for k in lags_days:
-        # k=1 => r_t；k=2 => r_{t-1}
         feats[f"ret_lag_{k}"] = r.shift(k - 1)
 
     return pd.DataFrame(feats, index=close.index)
@@ -51,16 +50,10 @@ def compute_term_spreads(aligned_levels: Dict[str, pd.Series]) -> pd.DataFrame:
     输出 DataFrame：包含 US_TermSpread / UK_TermSpread / GER_TermSpread（若可计算）。
     """
     out = {}
-    def _spread(country: str):
-        k3 = f"{country}_3M"
-        k10 = f"{country}_10Y"
-        if k3 in aligned_levels and k10 in aligned_levels:
-            out[f"{country}_TermSpread"] = aligned_levels[k10] - aligned_levels[k3]
-
     for c in ["US", "UK", "GER"]:
-        _spread(c)
-
+        k3, k10 = f"{c}_3M", f"{c}_10Y"
+        if k3 in aligned_levels and k10 in aligned_levels:
+            out[f"{c}_TermSpread"] = aligned_levels[k10] - aligned_levels[k3]
     if not out:
         return pd.DataFrame(index=next(iter(aligned_levels.values())).index)
-
     return pd.DataFrame(out)

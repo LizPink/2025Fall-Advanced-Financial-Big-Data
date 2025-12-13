@@ -1,20 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-IO 工具：读取 Excel、统一日期列/数值列、数值清洗等。
-所有注释采用中文，便于组内协作与论文复现。
+IO 工具：读取 Excel、统一日期/数值列，支持简单的数值清洗（K/M/B）。
 """
 
 from __future__ import annotations
 import re
-from typing import Optional, Tuple
 import pandas as pd
 import numpy as np
 
 def _parse_human_number(x):
-    """
-    将类似 '7.26K', '1.2M', '3B' 等格式转换为数值。
-    若无法解析则返回原值（后续再 to_numeric 会变为 NaN）。
-    """
+    """将 '7.26K'/'1.2M'/'3B' 等转为数值。"""
     if isinstance(x, (int, float, np.number)) or x is None:
         return x
     if isinstance(x, str):
@@ -45,9 +40,9 @@ def read_series_from_excel(
     """
     df = pd.read_excel(excel_path, sheet_name=sheet_name)
     if date_col not in df.columns:
-        raise KeyError(f"[{sheet_name}] 找不到日期列：{date_col}，当前列：{list(df.columns)}")
+        raise KeyError(f"[{sheet_name}] 找不到日期列：{date_col}；当前列：{list(df.columns)}")
     if value_col not in df.columns:
-        raise KeyError(f"[{sheet_name}] 找不到数值列：{value_col}，当前列：{list(df.columns)}")
+        raise KeyError(f"[{sheet_name}] 找不到数值列：{value_col}；当前列：{list(df.columns)}")
 
     out = df[[date_col, value_col]].copy()
     out.columns = ["date", "value"]

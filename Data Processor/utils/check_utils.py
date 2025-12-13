@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-质检工具：用于保证数据对齐与信息滞后口径正确。
-你们已人工检查过，但建议保留自动化检查作为“保险丝”。
+质检工具（最小必要集）：
+- 最终 index 必须与 USD 主轴一致
 """
 
 from __future__ import annotations
@@ -22,5 +22,5 @@ def summarize_row_filtering(df_before: pd.DataFrame, df_after: pd.DataFrame) -> 
     """输出行筛选统计，便于写作与复现说明。"""
     return pd.DataFrame({
         "metric": ["rows_before", "rows_after", "rows_dropped"],
-        "value": [len(df_before), len(df_after), len(df_before) - len(df_after)]
+        "value": [len(df_before), len(df_after), len(df_before) - len(df_after)],
     })
