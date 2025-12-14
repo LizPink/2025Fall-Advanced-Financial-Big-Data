@@ -7,7 +7,7 @@
 1. **USD** 作为日度主时间轴（交易日集合）。
 2. **shift y**：标签定义为  
    \[
-   y_t = r_{t+h} = \ln S_{t+h} - \ln S_{t}
+   y_t =\ln S_{t+h} - \ln S_{t}
    \]
    其中 `h = forecast_horizon_days`（默认 1 个交易日）。
 3. **低频变量（月度/季度）**：先施加发布滞后（默认：月滞后 1 期、季滞后 1 期），再映射到日度并 **carry-forward**。
@@ -25,7 +25,7 @@
 
 运行后会生成：
 
-- `Data/datasets/Data_M_X.xlsx`  
+- `Data/datasets/Data_D_X.xlsx`  
   其中 `X = forecast_horizon_days`（预测步长，交易日）。
 
 工作簿包含固定 Sheet：

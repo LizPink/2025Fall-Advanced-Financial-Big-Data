@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-配置文件（可直接修改）
+配置文件
 说明：
-1) 你们采用 USD 作为日度主时间轴；
-2) 标签采用 shift-y：y_t = r_{t+h}；
+1) 我们小组采用USD作为日度主时间轴；
+2) 标签采用“持有期对数收益”（h 个交易日）：y_t = log(S_{t+h}) - log(S_t)；
 3) 低频（月/季）变量：先施加发布滞后（月滞后1、季滞后1），再映射到日度并 forward fill；
 4) 缺口/跨市场节假日：carry-forward（forward fill）；
 5) 每个变量需显式指定 transform：none/diff/log_diff/pct_change。

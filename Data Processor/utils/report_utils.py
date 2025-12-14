@@ -49,7 +49,7 @@ def plot1_y_timeseries(y: pd.Series, title: str, out_path: str, dpi: int = 220) 
     ax.plot(s.index, s.values)
     ax.set_title(title)
     ax.set_xlabel("日期")
-    ax.set_ylabel("收益率标签 y")
+    ax.set_ylabel("持有期对数收益标签 y")
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(out_path, dpi=dpi)
@@ -128,7 +128,7 @@ def plot5_lowfreq_lag_schematic(title: str, out_path: str, dpi: int = 220) -> No
     ax.text(0.425, y0+0.12, "发布滞后\n(月+1 / 季+1)", ha="center", transform=ax.transAxes)
 
     ax.text(0.62, y0-0.15, "映射到日度：asof + forward fill\n(仅使用当日及之前可得信息)", transform=ax.transAxes)
-    ax.text(0.62, y0+0.05, "用于预测：y_t = r_{t+h}", transform=ax.transAxes)
+    ax.text(0.62, y0+0.05, "用于预测：log(S_{t+h}) - log(S_t)", transform=ax.transAxes)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=dpi)

@@ -248,10 +248,13 @@ def run_data_processor() -> str:
     # 6) 合并特征
     X = pd.concat([X_daily, tech, spreads, X_low], axis=1)
 
-    # 7) 构造标签 y（shift-y）
+    # 7) 构造标签 y（log(S_{t+h}) - log(S_t)）
     h = int(RUN["forecast_horizon_days"])
-    usd_r = compute_usd_return(usd_close_aligned)
-    y = usd_r.shift(-h)
+    close = usd_close_aligned.astype(float)
+    close = close.where(close > 0)
+    log_close = np.log(close)
+
+    y = log_close.shift(-h) - log_close
     y.name = f"USD_{h}"
 
     dataset_raw = pd.concat([y, X], axis=1)
@@ -291,7 +294,7 @@ def run_data_processor() -> str:
     # 11) 图形输出
     if RUN.get("enable_plots", False):
         dpi = int(PLOTS.get("dpi", 220))
-        plot1_y_timeseries(y, "图1 USD 预测标签（收益率）时间序列", os.path.join(figures_dir, "图1_USD标签收益率时间序列.png"), dpi=dpi)
+        plot1_y_timeseries(y, f"图1 USD 持有期对数收益标签（h={h}）时间序列", os.path.join(figures_dir, "图1_USD持有期对数收益标签时间序列.png"),dpi=dpi)
 
         key_cols = PLOTS.get("plot2_vars", ["VIX", "US_TermSpread", "WTI", "GOLD", "EPU_D"])
         plot2_key_exogenous_subplots(dataset_raw, key_cols, "图2 关键外生变量时间序列", os.path.join(figures_dir, "图2_关键外生变量时间序列.png"), dpi=dpi)
@@ -310,7 +313,7 @@ def run_data_processor() -> str:
         {"type": "table", "id": "T2", "file": "表2_缺失率与样本覆盖.xlsx"},
         {"type": "table", "id": "T3", "file": "表3_描述统计.xlsx"},
         {"type": "table", "id": "T4", "file": "表4_样本筛选统计.xlsx"},
-        {"type": "figure", "id": "F1", "file": "图1_USD标签收益率时间序列.png"},
+        {"type": "figure", "id": "F1", "file": "图1_USD持有期对数收益标签时间序列.png"},
         {"type": "figure", "id": "F2", "file": "图2_关键外生变量时间序列.png"},
         {"type": "figure", "id": "F3", "file": "图3_相关性热力图.png"},
         {"type": "figure", "id": "F4", "file": "图4_缺失分布可视化.png"},
