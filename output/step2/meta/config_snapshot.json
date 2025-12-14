@@ -1,0 +1,246 @@
+{
+  "step1_dataset_dir": "../output/step1/datasets",
+  "output_dir": "../output/step2",
+  "H_list": [
+    1,
+    5,
+    10,
+    20
+  ],
+  "dataset_file_template": "Data_D_{H}.xlsx",
+  "date_col": "date",
+  "y_prefix": "USD",
+  "drop_cols": [],
+  "feature_cols": "ALL",
+  "test_mode": "last_ratio",
+  "test_ratio": 0.2,
+  "test_years": 3,
+  "test_start": null,
+  "test_end": null,
+  "purge": false,
+  "embargo_size": 0,
+  "cv_mode": "expanding",
+  "cv_initial_train_size": 1500,
+  "cv_val_size": 252,
+  "cv_step_size": 252,
+  "cv_train_window": 1500,
+  "tune_metric": "rmse",
+  "grid_max_combinations": null,
+  "random_seed": 42,
+  "backtest_mode": "expanding",
+  "backtest_train_window": 2000,
+  "refit_every": 1,
+  "models": {
+    "RandomWalk": true,
+    "Ridge": true,
+    "Lasso": true,
+    "ElasticNet": true,
+    "RandomForest": true,
+    "XGBoost": true,
+    "LightGBM": true,
+    "MLP": true,
+    "LSTM": false,
+    "Transformer": false
+  },
+  "param_grids": {
+    "Ridge": {
+      "alpha": [
+        0.1,
+        1.0,
+        10.0,
+        100.0
+      ]
+    },
+    "Lasso": {
+      "alpha": [
+        0.0001,
+        0.001,
+        0.01,
+        0.1
+      ]
+    },
+    "ElasticNet": {
+      "alpha": [
+        0.0001,
+        0.001,
+        0.01,
+        0.1
+      ],
+      "l1_ratio": [
+        0.2,
+        0.5,
+        0.8
+      ]
+    },
+    "RandomForest": {
+      "n_estimators": [
+        300
+      ],
+      "max_depth": [
+        null,
+        5,
+        10
+      ],
+      "min_samples_leaf": [
+        1,
+        5,
+        10
+      ],
+      "max_features": [
+        "sqrt"
+      ]
+    },
+    "XGBoost": {
+      "n_estimators": [
+        500
+      ],
+      "max_depth": [
+        2,
+        3,
+        4
+      ],
+      "learning_rate": [
+        0.01,
+        0.05,
+        0.1
+      ],
+      "subsample": [
+        0.8,
+        1.0
+      ],
+      "colsample_bytree": [
+        0.8,
+        1.0
+      ],
+      "reg_lambda": [
+        1.0,
+        5.0
+      ]
+    },
+    "LightGBM": {
+      "n_estimators": [
+        1000
+      ],
+      "num_leaves": [
+        15,
+        31,
+        63
+      ],
+      "learning_rate": [
+        0.01,
+        0.05,
+        0.1
+      ],
+      "subsample": [
+        0.8,
+        1.0
+      ],
+      "colsample_bytree": [
+        0.8,
+        1.0
+      ],
+      "reg_lambda": [
+        0.0,
+        1.0,
+        5.0
+      ]
+    },
+    "MLP": {
+      "hidden_layer_sizes": [
+        [
+          64
+        ],
+        [
+          128
+        ],
+        [
+          64,
+          32
+        ]
+      ],
+      "alpha": [
+        1e-05,
+        0.0001,
+        0.001
+      ],
+      "learning_rate_init": [
+        0.001,
+        0.0005
+      ],
+      "max_iter": [
+        300
+      ]
+    },
+    "LSTM": {
+      "seq_len": [
+        20
+      ],
+      "hidden_size": [
+        64
+      ],
+      "num_layers": [
+        1
+      ],
+      "dropout": [
+        0.1
+      ],
+      "lr": [
+        0.001
+      ],
+      "batch_size": [
+        128
+      ],
+      "epochs": [
+        20
+      ]
+    },
+    "Transformer": {
+      "seq_len": [
+        20
+      ],
+      "d_model": [
+        64
+      ],
+      "nhead": [
+        4
+      ],
+      "num_layers": [
+        2
+      ],
+      "dropout": [
+        0.1
+      ],
+      "lr": [
+        0.001
+      ],
+      "batch_size": [
+        128
+      ],
+      "epochs": [
+        20
+      ]
+    }
+  },
+  "standardize_linear": true,
+  "standardize_mlp": true,
+  "standardize_sequence": true,
+  "metrics": [
+    "rmse",
+    "mae",
+    "mse",
+    "oos_r2_vs0",
+    "oos_r2_vsmean",
+    "sign_acc"
+  ],
+  "make_figures": true,
+  "top_k_features": 20,
+  "explain": {
+    "enable": true,
+    "global_method": "permutation",
+    "tree_method": "treeshap",
+    "sample_n": 1000,
+    "random_state": 42
+  },
+  "log_level": "INFO",
+  "show_progress": true
+}

@@ -33,6 +33,10 @@ RUN = {
 
     # 是否保留周末（一般建议 False）
     "keep_weekends": False,
+
+    # 标签可得性强校验：若为 True，将强制检查 y 是否只在尾部出现缺失（且缺失应连续），
+    # 用于防止样本截止日过近导致标签不可构造时被静默 drop。
+    "enforce_label_availability": True,
 }
 
 # ==============================
