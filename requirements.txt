@@ -1,0 +1,11 @@
+# Step1:
+pandas
+numpy
+openpyxl
+matplotlib
+
+# Step2:
+scikit-learn
+xgboost
+lightgbm
+torch
