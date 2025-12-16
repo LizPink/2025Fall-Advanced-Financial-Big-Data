@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
+import logging
 
 import numpy as np
 
@@ -16,6 +17,8 @@ except Exception:  # pragma: no cover
     DataLoader = None  # type: ignore
     TensorDataset = None  # type: ignore
 
+# avoid spamming logs when the same (arch, requested_device, actual_device) repeats
+_DEVICE_LOGGED = set()
 
 def _set_seed(seed: int) -> None:
     if torch is None:
@@ -170,6 +173,20 @@ class TorchSequenceRegressor:
             raise ValueError("Not enough sequences to train torch model. Reduce seq_len or increase data.")
 
         device = torch.device(self.device if torch.cuda.is_available() and self.device.startswith("cuda") else "cpu")
+        
+        # Log CUDA usage decision (once per unique combination to keep logs readable)
+        try:
+            req = str(self.device)
+            act = str(device)
+            key = (self.arch, req, act)
+            if key not in _DEVICE_LOGGED:
+                logger = logging.getLogger("step2")
+                logger.info(
+                    f"[Torch/{self.arch}] requested_device={req} | cuda_available={torch.cuda.is_available()} | using_device={act}"
+                )
+                _DEVICE_LOGGED.add(key)
+        except Exception:  # pragma: no cover
+            pass
 
         model = self._make_model(n_features=X.shape[1]).to(device)
         opt = torch.optim.Adam(model.parameters(), lr=float(self.lr))

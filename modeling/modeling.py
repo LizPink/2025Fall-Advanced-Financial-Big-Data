@@ -57,6 +57,18 @@ def main() -> None:
 
     _setup_logger(RUN.get("log_level", "INFO"))
     log = logging.getLogger("step2")
+    # Environment hint for torch/CUDA
+    try:  # pragma: no cover
+        import torch
+        cuda_ok = bool(torch.cuda.is_available())
+        if cuda_ok:
+            n = torch.cuda.device_count()
+            name0 = torch.cuda.get_device_name(0) if n > 0 else "(unknown)"
+            log.info(f"PyTorch CUDA available: True | device_count={n} | device0={name0}")
+        else:
+            log.info("PyTorch CUDA available: False")
+    except Exception:
+        log.info("PyTorch not installed; LSTM/Transformer will be unavailable")
 
     here = __file__
     dataset_dir = _resolve(here, RUN["step1_dataset_dir"])
@@ -139,7 +151,7 @@ def main() -> None:
                     extra={"H": H, "model": model_name},
                 )
 
-                # 3) 可视化（可选）
+                # 3) 可视化
                 if bool(RUN.get("make_figures", True)):
                     fig_prefix = dirs["figures"] / f"{model_name}_H{H}"
                     plot_pred_vs_true(

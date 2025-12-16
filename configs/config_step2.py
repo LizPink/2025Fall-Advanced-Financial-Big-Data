@@ -89,9 +89,9 @@ RUN: Dict[str, Any] = {
         "RandomForest": False,
         "XGBoost": False,
         "LightGBM": True,
-        "MLP": True,
-        "LSTM": True,          # 默认关闭（训练耗时较长，建议跑通后再打开）
-        "Transformer": True,   # 默认关闭（训练耗时较长，建议跑通后再打开）
+        "MLP": False,
+        "LSTM": False,
+        "Transformer": False,
     },
 
     # -------------------------
@@ -126,16 +126,13 @@ RUN: Dict[str, Any] = {
         },
         "LightGBM": {
             "n_estimators": [1000],
-            "num_leaves": [15, 31, 63],
+            "num_leaves": [31, 63],
             "learning_rate": [0.01, 0.05, 0.1],
             "subsample": [0.8, 1.0],
             "colsample_bytree": [0.8, 1.0],
             "reg_lambda": [0.0, 1.0, 5.0],
-            "min_child_samples": [20, 50],   # 默认 20；有时调大反而更稳
-            "min_split_gain": [0.0],         # 确保不要人为抬高分裂门槛
             "max_depth": [-1, 3, 5],
-            "verbose": [-1],                 # 降噪（LightGBM 自己的日志）
-            "bagging_freq": [1],             # 让 subsample 真正按迭代生效
+            "verbose": [-1],
             "force_col_wise": [True],
         },
         "MLP": {
@@ -156,6 +153,7 @@ RUN: Dict[str, Any] = {
             "lr": [1e-3, 5e-4],
             "batch_size": [64, 128],
             "epochs": [20, 30],
+            "device": ["cuda:0"],
         },
         "Transformer": {
             "seq_len": [20, 40, 80],
@@ -166,6 +164,7 @@ RUN: Dict[str, Any] = {
             "lr": [1e-3, 5e-4],
             "batch_size": [64, 128, 256],
             "epochs": [20, 30],
+            "device": ["cuda:0"],
         },
     },
 
