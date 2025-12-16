@@ -82,16 +82,16 @@ RUN: Dict[str, Any] = {
     # 模型库开关
     # -------------------------
     "models": {
-        "RandomWalk": True,     # 基准模型
-        "Ridge": True,
-        "Lasso": True,
-        "ElasticNet": True,
-        "RandomForest": True,
-        "XGBoost": True,
+        "RandomWalk": False,     # 基准模型
+        "Ridge": False,
+        "Lasso": False,
+        "ElasticNet": False,
+        "RandomForest": False,
+        "XGBoost": False,
         "LightGBM": True,
         "MLP": True,
-        "LSTM": False,          # 默认关闭（训练耗时较长，建议跑通后再打开）
-        "Transformer": False,   # 默认关闭（训练耗时较长，建议跑通后再打开）
+        "LSTM": True,          # 默认关闭（训练耗时较长，建议跑通后再打开）
+        "Transformer": True,   # 默认关闭（训练耗时较长，建议跑通后再打开）
     },
 
     # -------------------------
@@ -139,30 +139,33 @@ RUN: Dict[str, Any] = {
             "force_col_wise": [True],
         },
         "MLP": {
-            "hidden_layer_sizes": [(64,), (128,), (64, 32)],
+            "hidden_layer_sizes": [(32,), (64,), (64,32), (128,64), (128,64,32)],
+            "activation": ["relu", "tanh"],
             "alpha": [1e-5, 1e-4, 1e-3],
+            "learning_rate": ["constant", "adaptive"],
             "learning_rate_init": [1e-3, 5e-4],
-            "max_iter": [800],
+            "batch_size": [64, 128],
+            "max_iter": [800, 1000],
         },
         # 序列模型：建议先固定少量组合，避免组合爆炸
         "LSTM": {
-            "seq_len": [20],
-            "hidden_size": [64],
-            "num_layers": [1],
+            "seq_len": [20, 40, 60],
+            "hidden_size": [32, 64, 128],
+            "num_layers": [1, 2, 3],
             "dropout": [0.1],
-            "lr": [1e-3],
-            "batch_size": [128],
-            "epochs": [20],
+            "lr": [1e-3, 5e-4],
+            "batch_size": [64, 128],
+            "epochs": [20, 30],
         },
         "Transformer": {
-            "seq_len": [20],
-            "d_model": [64],
-            "nhead": [4],
-            "num_layers": [2],
-            "dropout": [0.1],
-            "lr": [1e-3],
-            "batch_size": [128],
-            "epochs": [20],
+            "seq_len": [20, 40, 80],
+            "d_model": [32, 64, 128],
+            "nhead": [2, 4, 8],
+            "num_layers": [1, 2, 3],
+            "dropout": [0.1, 0.2],
+            "lr": [1e-3, 5e-4],
+            "batch_size": [64, 128, 256],
+            "epochs": [20, 30],
         },
     },
 
