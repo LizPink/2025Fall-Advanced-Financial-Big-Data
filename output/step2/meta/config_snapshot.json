@@ -61,13 +61,13 @@
   "models": {
     "RandomWalk": false,
     "Ridge": false,
-    "Lasso": true,
+    "Lasso": false,
     "ElasticNet": false,
     "RandomForest": false,
     "XGBoost": false,
     "LightGBM": false,
     "MLP": false,
-    "LSTM": false,
+    "LSTM": true,
     "Transformer": false
   },
   "gpu": {
@@ -256,8 +256,6 @@
     },
     "LSTM": {
       "seq_len": [
-        20,
-        40,
         60
       ],
       "hidden_size": [
@@ -266,24 +264,20 @@
         128
       ],
       "num_layers": [
-        1,
-        2,
         3
       ],
       "dropout": [
-        0.1
+        0.1,
+        0.2
       ],
       "lr": [
         0.001,
         0.0005
       ],
       "batch_size": [
-        128,
-        256,
-        512
+        256
       ],
       "epochs": [
-        20,
         30
       ],
       "device": [

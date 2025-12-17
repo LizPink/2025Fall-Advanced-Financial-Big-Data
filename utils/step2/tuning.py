@@ -10,6 +10,7 @@ import numpy as np
 
 from .metrics import score_for_tuning
 from .split_utils import apply_embargo_purge
+from .backtest import _predict_sequence_with_lookback
 
 
 def _grid_to_param_list(grid: Dict[str, List[Any]], max_combinations: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -62,7 +63,10 @@ def grid_search_cv(
 
             model = build_model_fn(model_name, params, random_seed=random_seed)
             model.fit(X[tr_idx2], y[tr_idx2])
-            pred = model.predict(X[va_idx2])
+            if bool(getattr(model, "is_sequence", False)):
+                pred = _predict_sequence_with_lookback(model, X_full=X, pred_idx=va_idx2)
+            else:
+                pred = model.predict(X[va_idx2])
 
             # Some sequence models pad initial nan; drop those
             mask = ~np.isnan(pred)

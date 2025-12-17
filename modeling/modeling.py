@@ -299,6 +299,22 @@ def main() -> None:
 
             # remove possible nan predictions (sequence warmup)
             mask = np.isfinite(bt.y_pred)
+            if int(mask.sum()) == 0:
+                log.error(
+                    f"No valid predictions for model={model_name} H={H}. "
+                    f"This usually means the sequence model is being asked to predict without enough lookback context "
+                    f"(seq_len too large relative to blocks), or your sequence indices are not contiguous."
+                )
+                # still save the NaN-filled prediction file for debugging, then skip metrics/plots
+                pred_path = str(dirs["datasets"] / f"predictions_{model_name}_H{H}.csv")
+                save_predictions(
+                    pred_path,
+                    dates=data.dates[test_idx],
+                    y_true=bt.y_true,
+                    y_pred=bt.y_pred,
+                    extra={"H": H, "model": model_name},
+                )
+                continue
             y_true_eval = bt.y_true[mask]
             y_pred_eval = bt.y_pred[mask]
             metrics = compute_metrics(y_true_eval, y_pred_eval)
