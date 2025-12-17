@@ -50,6 +50,59 @@ def _resolve(base_file: str, rel: str) -> str:
     """Resolve relative paths with respect to the caller file location."""
     return str(Path(base_file).resolve().parent.joinpath(rel).resolve())
 
+def resolve_refit_every(run_cfg: Dict[str, Any], model_name: str, H: int) -> int:
+    """
+    解析 refit_every，支持：
+    - int：直接使用
+    - dict：by_model_h / by_model / by_h / by default(1)（优先级由高到低）
+    """
+    cfg = run_cfg.get("refit_every", 1)
+
+    # 1) 兼容旧写法：refit_every = 1
+    if isinstance(cfg, (int, float)):
+        v = int(cfg)
+        return max(1, v)
+
+    # 2) 新写法：refit_every = {...}
+    if isinstance(cfg, dict):
+        default = cfg.get("default", 1)
+        by_model_h = cfg.get("by_model_h", {}) or {}
+        by_model = cfg.get("by_model", {}) or {}
+        by_h = cfg.get("by_h", {}) or {}
+
+        v = None
+
+        # model + H（最高优先级）
+        mh = by_model_h.get(model_name, None)
+        if isinstance(mh, dict):
+            if H in mh:
+                v = mh[H]
+            elif str(H) in mh:
+                v = mh[str(H)]
+
+        # model
+        if v is None and model_name in by_model:
+            v = by_model[model_name]
+
+        # H
+        if v is None:
+            if H in by_h:
+                v = by_h[H]
+            elif str(H) in by_h:
+                v = by_h[str(H)]
+
+        # default
+        if v is None:
+            v = default
+
+        try:
+            v = int(v)
+        except Exception:
+            v = 1
+        return max(1, v)
+
+    # 3) 其他异常类型，兜底
+    return 1
 
 def main() -> None:
     cfg = importlib.import_module("configs.config_step2")
@@ -214,7 +267,6 @@ def main() -> None:
                 str(dirs["meta"] / f"tuning_history_{model_name}_H{H}.json"),
                 tune.history,
             )
-
             append_table_csv(params_csv, {
                 "model": model_name,
                 "H": H,
@@ -223,6 +275,13 @@ def main() -> None:
             })
 
             # 2) Walk-forward OOS prediction on test
+            refit_every = resolve_refit_every(RUN, model_name, H)
+            log.info(
+                f"Backtest settings | model={model_name} H={H} "
+                f"mode={RUN.get('backtest_mode','expanding')} "
+                f"train_window={int(RUN.get('backtest_train_window', 2000))} "
+                f"refit_every={refit_every}"
+            )
             bt = walk_forward_predict(
                 model_name=model_name,
                 build_model_fn=_build,
@@ -233,7 +292,7 @@ def main() -> None:
                 best_params=best_params,
                 mode=RUN.get("backtest_mode", "expanding"),
                 train_window=int(RUN.get("backtest_train_window", 2000)),
-                refit_every=int(RUN.get("refit_every", 1)),
+                refit_every=refit_every,
                 random_seed=int(RUN.get("random_seed", 42)),
                 verbose=bool(RUN.get("show_progress", True)),
             )

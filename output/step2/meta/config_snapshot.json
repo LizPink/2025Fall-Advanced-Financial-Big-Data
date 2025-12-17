@@ -29,18 +29,46 @@
   "random_seed": 42,
   "backtest_mode": "expanding",
   "backtest_train_window": 2000,
-  "refit_every": 1,
+  "refit_every": {
+    "default": 1,
+    "by_model": {
+      "MLP": 5,
+      "LSTM": 10,
+      "Transformer": 10
+    },
+    "by_model_h": {
+      "MLP": {
+        "1": 5,
+        "5": 5,
+        "10": 10,
+        "20": 10
+      },
+      "LSTM": {
+        "1": 10,
+        "5": 10,
+        "10": 20,
+        "20": 20
+      },
+      "Transformer": {
+        "1": 10,
+        "5": 10,
+        "10": 20,
+        "20": 20
+      }
+    },
+    "by_h": {}
+  },
   "models": {
     "RandomWalk": false,
     "Ridge": false,
-    "Lasso": false,
+    "Lasso": true,
     "ElasticNet": false,
     "RandomForest": false,
     "XGBoost": false,
     "LightGBM": false,
     "MLP": false,
-    "LSTM": true,
-    "Transformer": true
+    "LSTM": false,
+    "Transformer": false
   },
   "gpu": {
     "enable": true,

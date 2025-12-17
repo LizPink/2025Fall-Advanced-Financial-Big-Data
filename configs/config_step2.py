@@ -77,7 +77,25 @@ RUN: Dict[str, Any] = {
     # -------------------------
     "backtest_mode": "expanding",   # "expanding" or "rolling"
     "backtest_train_window": 2000,  # rolling 模式的训练窗口长度
-    "refit_every": 1,               # 每隔 refit_every 个测试点重训一次（深度模型建议 > 1）
+    # 每隔 refit_every 个测试点重训一次（walk-forward），支持按 model 和 H（horizon）分别配置
+    # - 优先级：by_model_h[model][H] > by_model[model] > by_h[H] > default
+    "refit_every": {
+        "default": 1,  # 线性/树模型通常可用 1；深度模型建议 > 1
+        "by_model": {
+            # 如果希望某个模型在所有 H 下都用同一个频率，可写在这里
+            "MLP": 5,
+            "LSTM": 10,
+            "Transformer": 10,
+        },
+        "by_model_h": {
+            # 如果希望随 H 调整（推荐），在这里覆盖
+            "MLP": {1: 5, 5: 5, 10: 10, 20: 10},
+            "LSTM": {1: 10, 5: 10, 10: 20, 20: 20},
+            "Transformer": {1: 10, 5: 10, 10: 20, 20: 20},
+        },
+        # 可选：只按 H 覆盖（不区分模型）
+        "by_h": {},
+    },
 
     # -------------------------
     # 模型库开关
@@ -85,14 +103,14 @@ RUN: Dict[str, Any] = {
     "models": {
         "RandomWalk": False,     # 基准模型
         "Ridge": False,
-        "Lasso": False,
+        "Lasso": True,
         "ElasticNet": False,
         "RandomForest": False,
         "XGBoost": False,
         "LightGBM": False,
         "MLP": False,
-        "LSTM": True,
-        "Transformer": True,
+        "LSTM": False,
+        "Transformer": False,
     },
 
     # -------------------------
