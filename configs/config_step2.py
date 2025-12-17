@@ -29,6 +29,8 @@ RUN: Dict[str, Any] = {
     # 预测期列表（H=holding horizon, in trading days）
     "H_list": [1, 5, 10, 20],
     # "H_list": [5, 10, 20],
+    # "H_list": [10, 20],
+    # "H_list": [20],
 
     # 文件模板：Data_D_{H}.xlsx（D=Daily 标签，不代表 horizon）
     "dataset_file_template": "Data_D_{H}.xlsx",
@@ -84,14 +86,14 @@ RUN: Dict[str, Any] = {
         "by_model": {
             # 如果希望某个模型在所有 H 下都用同一个频率，可写在这里
             "MLP": 5,
-            "LSTM": 10,
-            "Transformer": 10,
+            "LSTM": 5,
+            "Transformer": 5,
         },
         "by_model_h": {
             # 如果希望随 H 调整（推荐），在这里覆盖
-            "MLP": {1: 5, 5: 5, 10: 10, 20: 10},
-            "LSTM": {1: 10, 5: 10, 10: 20, 20: 20},
-            "Transformer": {1: 10, 5: 10, 10: 20, 20: 20},
+            "MLP": {1: 5, 5: 5, 10: 5, 20: 5},
+            "LSTM": {1: 5, 5: 5, 10: 5, 20: 5},
+            "Transformer": {1: 5, 5: 5, 10: 5, 20: 5},
         },
         # 可选：只按 H 覆盖（不区分模型）
         "by_h": {},
@@ -103,13 +105,13 @@ RUN: Dict[str, Any] = {
     "models": {
         "RandomWalk": False,     # 基准模型
         "Ridge": False,
-        "Lasso": True,
+        "Lasso": False,
         "ElasticNet": False,
         "RandomForest": False,
         "XGBoost": False,
         "LightGBM": False,
         "MLP": False,
-        "LSTM": False,
+        "LSTM": True,
         "Transformer": False,
     },
 
@@ -194,13 +196,14 @@ RUN: Dict[str, Any] = {
         },
         # 序列模型：建议先固定少量组合，避免组合爆炸
         "LSTM": {
-            "seq_len": [20, 40, 60],
+            "seq_len": [60],
             "hidden_size": [32, 64, 128],
-            "num_layers": [1, 2, 3],
-            "dropout": [0.1],
+            "num_layers": [3],
+            "dropout": [0.1, 0.2],
             "lr": [1e-3, 5e-4],
-            "batch_size": [128, 256, 512],
-            "epochs": [20, 30],
+            "batch_size": [256],
+            "epochs": [30],
+            "dropout": [0.1, 0.2],
             "device": ["cuda:0"],
         },
         "Transformer": {
