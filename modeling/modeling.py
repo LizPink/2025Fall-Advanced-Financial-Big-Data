@@ -187,6 +187,7 @@ def main() -> None:
                     standardize_linear=bool(RUN.get("standardize_linear", True)),
                     standardize_mlp=bool(RUN.get("standardize_mlp", True)),
                     standardize_sequence=bool(RUN.get("standardize_sequence", True)),
+                    gpu=RUN.get("gpu", {}),
                 )
 
             # 1) Hyperparameter tuning on train_val only

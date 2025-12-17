@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 import logging
 
 import numpy as np
@@ -16,6 +16,14 @@ except Exception:  # pragma: no cover
     nn = None  # type: ignore
     DataLoader = None  # type: ignore
     TensorDataset = None  # type: ignore
+
+# --- typing aliases for optional torch dependency (for Pylance / static type checking) ---
+if TYPE_CHECKING:
+    from torch import Tensor
+    from torch.nn import Module
+else:
+    Tensor = Any  # type: ignore
+    Module = Any  # type: ignore
 
 # avoid spamming logs when the same (arch, requested_device, actual_device) repeats
 _DEVICE_LOGGED = set()
@@ -69,6 +77,146 @@ def build_sequences(
     return np.asarray(seq_X, dtype=float), np.asarray(seq_y, dtype=float)
 
 
+class MLPRegressorNet(nn.Module):
+    """Simple feed-forward MLP for tabular regression."""
+
+    def __init__(
+        self,
+        n_features: int,
+        hidden_layer_sizes: Tuple[int, ...] = (64, 32),
+        activation: str = "relu",
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+
+        act = str(activation).lower().strip()
+        if act == "relu":
+            act_layer = nn.ReLU
+        elif act == "tanh":
+            act_layer = nn.Tanh
+        elif act == "gelu":
+            act_layer = nn.GELU
+        else:
+            raise ValueError(f"Unsupported activation for TorchMLP: {activation}")
+
+        layers = []
+        in_dim = int(n_features)
+        for h in tuple(int(x) for x in hidden_layer_sizes):
+            layers.append(nn.Linear(in_dim, h))
+            layers.append(act_layer())
+            if float(dropout) > 0:
+                layers.append(nn.Dropout(float(dropout)))
+            in_dim = h
+        layers.append(nn.Linear(in_dim, 1))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.net(x).squeeze(-1)
+
+
+@dataclass
+class TorchMLPRegressor:
+    """Torch-based MLP regressor (tabular) with sklearn-like API.
+
+    This is used to provide GPU acceleration for the "MLP" model.
+    Parameter names are intentionally aligned with sklearn's MLPRegressor grid
+    where practical:
+    - hidden_layer_sizes: tuple[int, ...]
+    - activation: relu/tanh/gelu
+    - alpha: weight_decay
+    - learning_rate_init: lr
+    - batch_size
+    - max_iter: epochs
+    """
+
+    hidden_layer_sizes: Tuple[int, ...] = (64, 32)
+    activation: str = "relu"
+    dropout: float = 0.0
+    lr: float = 1e-3
+    weight_decay: float = 0.0
+    batch_size: int = 128
+    epochs: int = 30
+    standardize: bool = True
+    random_seed: int = 42
+    device: str = "cpu"
+
+    _mean: Optional[np.ndarray] = None
+    _std: Optional[np.ndarray] = None
+    _model: Any = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "TorchMLPRegressor":
+        if torch is None:
+            raise ImportError("torch not available")
+        _set_seed(self.random_seed)
+
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float).reshape(-1)
+
+        if self.standardize:
+            Xs, mean, std = _standardize_fit(X)
+            self._mean, self._std = mean, std
+        else:
+            Xs = X
+
+        device = torch.device(self.device if torch.cuda.is_available() and str(self.device).startswith("cuda") else "cpu")
+        try:
+            req = str(self.device)
+            act = str(device)
+            key = ("MLP", req, act)
+            if key not in _DEVICE_LOGGED:
+                logger = logging.getLogger("step2")
+                logger.info(
+                    f"[Torch/MLP] requested_device={req} | cuda_available={torch.cuda.is_available()} | using_device={act}"
+                )
+                _DEVICE_LOGGED.add(key)
+        except Exception:  # pragma: no cover
+            pass
+
+        model = MLPRegressorNet(
+            n_features=Xs.shape[1],
+            hidden_layer_sizes=self.hidden_layer_sizes,
+            activation=self.activation,
+            dropout=float(self.dropout),
+        ).to(device)
+
+        opt = torch.optim.Adam(model.parameters(), lr=float(self.lr), weight_decay=float(self.weight_decay))
+        loss_fn = nn.MSELoss()
+
+        ds = TensorDataset(torch.tensor(Xs, dtype=torch.float32), torch.tensor(y, dtype=torch.float32))
+        dl = DataLoader(ds, batch_size=int(self.batch_size), shuffle=True, drop_last=False)
+
+        model.train()
+        for _ in range(int(self.epochs)):
+            for xb, yb in dl:
+                xb = xb.to(device)
+                yb = yb.to(device)
+                opt.zero_grad()
+                pred = model(xb)
+                loss = loss_fn(pred, yb)
+                loss.backward()
+                opt.step()
+
+        self._model = model
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if torch is None or self._model is None:
+            raise RuntimeError("Model not fitted")
+        X = np.asarray(X, dtype=float)
+
+        if self.standardize and self._mean is not None and self._std is not None:
+            Xs = _standardize_apply(X, self._mean, self._std)
+        else:
+            Xs = X
+
+        device = next(self._model.parameters()).device
+        self._model.eval()
+        with torch.no_grad():
+            xb = torch.tensor(Xs, dtype=torch.float32).to(device)
+            pred = self._model(xb).cpu().numpy().reshape(-1)
+        return pred
+
+
 class LSTMRegressor(nn.Module):
     def __init__(self, n_features: int, hidden_size: int, num_layers: int, dropout: float):
         super().__init__()
@@ -81,7 +229,7 @@ class LSTMRegressor(nn.Module):
         )
         self.fc = nn.Linear(hidden_size, 1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # (B,T,F)
+    def forward(self, x: Tensor) -> Tensor:  # (B,T,F)
         out, _ = self.lstm(x)
         last = out[:, -1, :]
         return self.fc(last).squeeze(-1)
@@ -97,7 +245,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer("pe", pe.unsqueeze(0))  # (1, max_len, d_model)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         x = x + self.pe[:, : x.size(1)]
         return x
 
@@ -111,7 +259,7 @@ class TransformerRegressor(nn.Module):
         self.enc = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
         self.fc = nn.Linear(d_model, 1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         z = self.input_proj(x)
         z = self.pos(z)
         z = self.enc(z)
@@ -146,7 +294,7 @@ class TorchSequenceRegressor:
     _std: Optional[np.ndarray] = None
     _model: Any = None
 
-    def _make_model(self, n_features: int) -> nn.Module:
+    def _make_model(self, n_features: int) -> Module:
         if self.arch == "LSTM":
             return LSTMRegressor(n_features=n_features, hidden_size=self.hidden_size, num_layers=self.num_layers, dropout=self.dropout)
         if self.arch == "Transformer":

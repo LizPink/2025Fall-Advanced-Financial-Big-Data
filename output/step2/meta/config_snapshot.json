@@ -37,10 +37,31 @@
     "ElasticNet": false,
     "RandomForest": false,
     "XGBoost": false,
-    "LightGBM": true,
+    "LightGBM": false,
     "MLP": false,
-    "LSTM": false,
-    "Transformer": false
+    "LSTM": true,
+    "Transformer": true
+  },
+  "gpu": {
+    "enable": true,
+    "device": "cuda:0",
+    "fallback_to_cpu": false,
+    "models": {
+      "XGBoost": false,
+      "LightGBM": false,
+      "MLP": false,
+      "LSTM": true,
+      "Transformer": true
+    },
+    "xgboost": {
+      "device": "cuda",
+      "tree_method": "hist"
+    },
+    "lightgbm": {
+      "device_type": "gpu",
+      "gpu_platform_id": 0,
+      "gpu_device_id": 0
+    }
   },
   "param_grids": {
     "Ridge": {
@@ -68,13 +89,15 @@
       ],
       "l1_ratio": [
         0.2,
-        0.5,
+        0.4,
+        0.6,
         0.8
       ]
     },
     "RandomForest": {
       "n_estimators": [
-        300
+        300,
+        800
       ],
       "max_depth": [
         null,
@@ -87,12 +110,15 @@
         10
       ],
       "max_features": [
-        "sqrt"
+        "sqrt",
+        0.3,
+        0.5
       ]
     },
     "XGBoost": {
       "n_estimators": [
-        500
+        500,
+        1000
       ],
       "max_depth": [
         2,
@@ -119,17 +145,18 @@
     },
     "LightGBM": {
       "n_estimators": [
+        500,
         1000
       ],
       "num_leaves": [
-        15,
         31,
-        63
+        63,
+        127
       ],
       "learning_rate": [
+        0.008,
         0.01,
-        0.05,
-        0.1
+        0.05
       ],
       "subsample": [
         0.8,
@@ -140,8 +167,7 @@
         1.0
       ],
       "reg_lambda": [
-        0.0,
-        1.0,
+        3.0,
         5.0
       ],
       "max_depth": [
@@ -158,9 +184,6 @@
     },
     "MLP": {
       "hidden_layer_sizes": [
-        [
-          32
-        ],
         [
           64
         ],
@@ -200,8 +223,7 @@
         128
       ],
       "max_iter": [
-        800,
-        1000
+        1500
       ]
     },
     "LSTM": {
@@ -228,8 +250,9 @@
         0.0005
       ],
       "batch_size": [
-        64,
-        128
+        128,
+        256,
+        512
       ],
       "epochs": [
         20,
@@ -241,12 +264,10 @@
     },
     "Transformer": {
       "seq_len": [
-        20,
         40,
         80
       ],
       "d_model": [
-        32,
         64,
         128
       ],
@@ -269,9 +290,9 @@
         0.0005
       ],
       "batch_size": [
-        64,
         128,
-        256
+        256,
+        512
       ],
       "epochs": [
         20,

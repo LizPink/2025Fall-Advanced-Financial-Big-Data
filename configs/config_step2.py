@@ -28,6 +28,7 @@ RUN: Dict[str, Any] = {
 
     # 预测期列表（H=holding horizon, in trading days）
     "H_list": [1, 5, 10, 20],
+    # "H_list": [5, 10, 20],
 
     # 文件模板：Data_D_{H}.xlsx（D=Daily 标签，不代表 horizon）
     "dataset_file_template": "Data_D_{H}.xlsx",
@@ -88,10 +89,39 @@ RUN: Dict[str, Any] = {
         "ElasticNet": False,
         "RandomForest": False,
         "XGBoost": False,
-        "LightGBM": True,
+        "LightGBM": False,
         "MLP": False,
-        "LSTM": False,
-        "Transformer": False,
+        "LSTM": True,
+        "Transformer": True,
+    },
+
+    # -------------------------
+    # GPU / CUDA（统一开关）
+    # 说明
+    # - Torch 模型（MLP/LSTM/Transformer）只要 device 设为 "cuda:*" 且 torch.cuda.is_available() 即会使用 GPU。
+    # - XGBoost / LightGBM 需要安装支持 GPU 的版本；若未编译 GPU 支持，将在训练时报错。
+    # - 为了让你们“只改 config”即可切换 CPU/GPU，本项目会在 build_model 时自动注入必要的 GPU 参数。
+    "gpu": {
+        "enable": True,
+        "device": "cuda:0",             # torch 默认 device
+        "fallback_to_cpu": False,       # 若 GPU 训练失败，是否回退到 CPU（建议 True 便于跑通）
+        "models": {
+            "XGBoost": False,
+            "LightGBM": False,
+            "MLP": False,
+            "LSTM": True,
+            "Transformer": True,
+        },
+        # 额外注入到 XGBoost / LightGBM 的 GPU 参数（不放进 param_grid，避免组合爆炸）
+        "xgboost": {
+            "device": "cuda",
+            "tree_method": "hist",
+        },
+        "lightgbm": {
+            "device_type": "gpu",
+            "gpu_platform_id": 0,
+            "gpu_device_id": 0,
+        },
     },
 
     # -------------------------
@@ -108,16 +138,16 @@ RUN: Dict[str, Any] = {
         },
         "ElasticNet": {
             "alpha": [1e-4, 1e-3, 1e-2, 1e-1],
-            "l1_ratio": [0.2, 0.5, 0.8],
+            "l1_ratio": [0.2, 0.4, 0.6, 0.8],
         },
         "RandomForest": {
-            "n_estimators": [300],
+            "n_estimators": [300, 800],
             "max_depth": [None, 5, 10],
             "min_samples_leaf": [1, 5, 10],
-            "max_features": ["sqrt"],
+            "max_features": ["sqrt", 0.3, 0.5],
         },
         "XGBoost": {
-            "n_estimators": [500],
+            "n_estimators": [500, 1000],
             "max_depth": [2, 3, 4],
             "learning_rate": [0.01, 0.05, 0.1],
             "subsample": [0.8, 1.0],
@@ -125,24 +155,24 @@ RUN: Dict[str, Any] = {
             "reg_lambda": [1.0, 5.0],
         },
         "LightGBM": {
-            "n_estimators": [1000],
-            "num_leaves": [31, 63],
-            "learning_rate": [0.01, 0.05, 0.1],
+            "n_estimators": [500, 1000],
+            "num_leaves": [31, 63, 127],
+            "learning_rate": [0.008, 0.01, 0.05],
             "subsample": [0.8, 1.0],
             "colsample_bytree": [0.8, 1.0],
-            "reg_lambda": [0.0, 1.0, 5.0],
+            "reg_lambda": [3.0, 5.0],
             "max_depth": [-1, 3, 5],
             "verbose": [-1],
             "force_col_wise": [True],
         },
         "MLP": {
-            "hidden_layer_sizes": [(32,), (64,), (64,32), (128,64), (128,64,32)],
+            "hidden_layer_sizes": [(64,), (64,32), (128,64), (128,64,32)],
             "activation": ["relu", "tanh"],
             "alpha": [1e-5, 1e-4, 1e-3],
             "learning_rate": ["constant", "adaptive"],
             "learning_rate_init": [1e-3, 5e-4],
             "batch_size": [64, 128],
-            "max_iter": [800, 1000],
+            "max_iter": [1500],
         },
         # 序列模型：建议先固定少量组合，避免组合爆炸
         "LSTM": {
@@ -151,18 +181,18 @@ RUN: Dict[str, Any] = {
             "num_layers": [1, 2, 3],
             "dropout": [0.1],
             "lr": [1e-3, 5e-4],
-            "batch_size": [64, 128],
+            "batch_size": [128, 256, 512],
             "epochs": [20, 30],
             "device": ["cuda:0"],
         },
         "Transformer": {
-            "seq_len": [20, 40, 80],
-            "d_model": [32, 64, 128],
+            "seq_len": [40, 80],
+            "d_model": [64, 128],
             "nhead": [2, 4, 8],
             "num_layers": [1, 2, 3],
             "dropout": [0.1, 0.2],
             "lr": [1e-3, 5e-4],
-            "batch_size": [64, 128, 256],
+            "batch_size": [128, 256, 512],
             "epochs": [20, 30],
             "device": ["cuda:0"],
         },
