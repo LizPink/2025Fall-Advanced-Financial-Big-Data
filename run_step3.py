@@ -1,34 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Step3 入口脚本。
+"""Step3 启动脚本
 
-运行方式：
-    python run_step3.py
+用法
+- 在项目根目录执行：python run_step3.py
+
+说明
+- Step3 的主体逻辑在 extension_analysis/pipeline.py
+- Step3 的配置在 configs/config_step3.py
+
+所有注释采用中文。
 """
 
-from __future__ import annotations
-
-import importlib
-import logging
-from pathlib import Path
-
-from extension_analysis.extension_pipeline import run_step3
-
-
-def _setup_logger(level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, str(level).upper(), logging.INFO),
-        format="%(asctime)s | %(levelname)s | %(message)s",
-    )
-
-
-def main() -> None:
-    cfg_mod = importlib.import_module("config.config_step3")
-    RUN = getattr(cfg_mod, "RUN")
-
-    _setup_logger(RUN.get("log_level", "INFO"))
-
-    # 运行
-    run_step3(RUN)
+from extension_analysis.pipeline import main
 
 
 if __name__ == "__main__":

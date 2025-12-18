@@ -1,111 +1,137 @@
 # -*- coding: utf-8 -*-
-"""Step3：拓展分析配置
+"""Step3: 拓展分析（extension_analysis）配置
 
-本 Step3 主要做三件事：
-1）经济层检验：把 Step2 的预测结果转换为可解释的交易绩效，并做稳健性（tau/baseline/相位 phase）。
-2）VIX 分时期检验：用 VIX 划分风险状态，既输出 conditional（条件绩效）也输出 episode（连续区间）。
-3）滚动窗口重要性稳定性：按时间滚动训练并计算 permutation importance /（树模型）TreeSHAP，并输出可视化。
+本 Step3 的核心目标：在不改动 Step2 主流程的前提下，基于 Step2 的 OOS 预测结果开展拓展分析。
 
-运行方式：
-    python run_step3.py
+主要模块
+1) 经济层检验（Economic Layer）
+   - 允许做空（allow_short）
+   - 基准策略（baselines）：cash / always_long / always_short
+   - 开平仓阈值（tau_list）作为稳健性分析
+   - 非重叠持有期评估（non-overlapping）+ 相位全扫（phase_sweep）
+   - 交易成本（tc_bps）：按仓位变化计费
 
-输出：
-    output/step3/
-        tables/   经济层、VIX 分时期、滚动重要性（长表/均值表）
-        datasets/ 策略收益序列、VIX episode 列表等
-        figures/  资金曲线、重要性折线/热力图/稳定性图
-        meta/     config_snapshot_step3.json、run_manifest.json
-        logs/     运行日志
+2) VIX 分时期检验（Regime / Subperiod）
+   - conditional：按 VIX 状态对“交易样本”分组计算绩效（不改变时间顺序）
+   - episode：把 VIX 状态合并成连续时段（便于叙事/可视化）
+   - 阈值无前视：train_only（默认）/ expanding（可选）
+   - 去抖：hysteresis（双阈值）+ min_spell_days（最短持续期）
 
-注意：
-- Step3 默认以“非重叠持有期（每 H 天再平衡一次）”作为经济层主口径。
-- VIX 分位数阈值默认用 train_only（仅训练/验证期）以避免前视。
+3) 滚动窗口重要性稳定性
+   - permutation importance（通用）
+   - TreeSHAP（树模型：XGBoost/LightGBM）
+   - 生成折线图/热力图/Jaccard 稳定性图
+
+输出目录（默认）：../output/step3
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 RUN: Dict[str, Any] = {
     # -----------------------------
-    # 输入/输出路径
+    # 路径（相对 extension_analysis/pipeline.py 解析）
     # -----------------------------
     "step1_dataset_dir": "../output/step1/datasets",
     "step2_output_dir": "../output/step2",
     "output_dir": "../output/step3",
 
+    # 是否读取 Step2 的 config_snapshot.json 来复用 test split / backtest_mode 等口径
+    # True：优先采用 Step2 口径，保证 Step3 与 Step2 可比
+    # False：仅使用本 Step3 配置（不推荐）
+    "inherit_step2_snapshot": True,
+
+    # 日志
+    "log_level": "INFO",
+
+    # Matplotlib 中文字体候选（用于图标题/坐标轴中文）
+    "cn_font_candidates": [
+        "SimHei",
+        "Microsoft YaHei",
+        "Arial Unicode MS",
+        "Noto Sans CJK SC",
+        "DejaVu Sans",
+    ],
+
     # -----------------------------
-    # 选择要做拓展分析的模型与预测期 H
-    # - 默认扫描 step2/datasets 下的 predictions_{model}_H{H}.csv
-    # - 再按 include/exclude 过滤
+    # 选择：哪些模型 / 哪些 H 参与 Step3
+    # 说明：Step3 会扫描 Step2 的 predictions_*.csv，再按这里筛选
     # -----------------------------
     "selection": {
-        "models_include": "ALL",   # "ALL" 或 ["Lasso", "XGBoost", ...]
-        "models_exclude": [],      # 永远优先生效
-        "H_include": "ALL",       # "ALL" 或 [1,5,10,20]
+        "models_include": "ALL",     # "ALL" 或 ["Lasso","XGBoost",...]
+        "models_exclude": [],
+        "H_include": "ALL",          # "ALL" 或 [1,5,10,20]
+        "H_exclude": [],
     },
 
     # -----------------------------
-    # 经济层检验（Economic Layer）
+    # 烟雾测试：快速验证流水线（建议首次跑通用 True）
+    # -----------------------------
+    "smoke_test": {
+        "enable": False,
+        "max_models": 2,
+        "max_windows": 3,
+    },
+
+    # -----------------------------
+    # 输入契约校验（强烈建议开启）
+    # -----------------------------
+    "io_contract": {
+        "enable": True,
+        "check_y_true_alignment": True,   # 把 predictions 的 y_true 与 Step1 的 USD_{H} 做对齐检查（抽样/全量）
+        "alignment_max_abs_diff": 1e-10,  # 允许的最大绝对误差
+        "alignment_sample_n": 200,        # 抽样检查条数；None 表示全量（可能慢）
+    },
+
+    # -----------------------------
+    # 经济层检验
     # -----------------------------
     "economic": {
         "enable": True,
 
-        # 交易信号
-        "allow_short": True,             # 是否允许做空（外汇通常允许）
-        "tau_list": [0.0, 0.0005, 0.001],# 建/卖仓位阈值（敏感性分析，不在 test 上挑最优）
+        # 交易规则
+        "allow_short": True,
+        "tau_list": [0.0, 0.0005, 0.001],  # 开平仓阈值：|y_pred| <= tau -> 空仓
+        "tc_bps": 1.0,                     # 单边成本（bps），按仓位变化计费
 
-        # 基准策略（与模型同口径输出）
-        # - cash: 全程空仓
-        # - always_long: 全程做多
-        # - always_short: 全程做空
+        # 评估口径
+        "annual_days": 252,
+        "use_non_overlapping": True,
+        "phase_sweep": True,               # phase=0..H-1 全扫
+
+        # 基准策略
         "baselines": ["cash", "always_long", "always_short"],
 
-        # 非重叠持有期与相位稳健性
-        "use_non_overlapping": True,     # True：每 H 天取一次样本
-        "phase_sweep": True,             # True：phase=0..H-1 全扫
-
-        # 成本与年化
-        "tc_bps": 1.0,                   # 单边成本（bps），按仓位变化计费
-        "annual_days": 252,
-
-        # 输出开关
-        "save_return_series": True,
-        "make_equity_fig": True,
-
-        # 可选：未来如果要做“重叠持有期 + HAC t-stat”检验
-        "overlap_inference": {
-            "enable_hac": False,
-            "hac_lags": "H-1",          # 字符串便于表达；实现时解析
-        },
+        # 输出
+        "save_trades_long": True,          # 保存“交易级别”长表（供 VIX/可视化复用）
+        "save_equity_fig": True,
+        "plot_phase": 0,                   # 画资金曲线时使用哪个相位（0..H-1）
+        "plot_strategies": ["model", "always_long", "cash"],
     },
 
     # -----------------------------
-    # VIX 分时期检验
+    # VIX 分时期（Regime）
     # -----------------------------
     "vix_regime": {
         "enable": True,
-        "vix_col": "VIX",
-
-        # 两种输出：
-        # - conditional: 条件绩效（不改变时序，只做分组统计）
-        # - episode: 连续区间（便于叙事与可视化）
+        "vix_col": "VIX",                      # Step1 数据集中 VIX 列名
         "methods": ["conditional", "episode"],
 
-        # regime 贴标签口径：
-        # - entry: 用 VIX_t 给 (t -> t+H) 这笔交易贴标签（无前视、推荐）
+        # regime 贴标时点：
+        # - "entry"：用 VIX_t 给 t->t+H 这笔交易贴标签（推荐，避免持有期内信息）
         "regime_on": "entry",
 
-        # 阈值模式：quantile / fixed
-        "mode": "quantile",
+        # 阈值模式：分位数 or 固定阈值
+        "mode": "quantile",                    # "quantile" | "fixed"
 
-        # 阈值来源：train_only / expanding
-        # - train_only: 用训练/验证期估阈值，固定后用于测试期
-        # - expanding: 到 t 为止用历史估阈值（更严格，但计算更重）
-        "threshold_source": "train_only",
+        # 阈值来源（无前视）：
+        # - "train_only"：用训练/验证期固定阈值，再用于测试期
+        # - "expanding"：对每个日期用历史 expanding 分位数（并 shift 1 天）
+        "threshold_source": "train_only",      # "train_only" | "expanding"
 
-        # 分位数阈值 + 去抖动（双阈值 hysteresis）
+        # hysteresis（双阈值）：进入/退出 low/high 的分位数
         "quantiles": {
             "enter_low": 0.30,
             "exit_low": 0.40,
@@ -113,7 +139,7 @@ RUN: Dict[str, Any] = {
             "exit_high": 0.60,
         },
 
-        # 固定阈值（可用于稳健性对照）
+        # 固定阈值（可作为稳健性对照）
         "fixed_thresholds": {
             "enter_low": 15.0,
             "exit_low": 18.0,
@@ -121,61 +147,55 @@ RUN: Dict[str, Any] = {
             "exit_high": 22.0,
         },
 
-        # episode 平滑：持续天数太短的 episode 合并处理
+        # episode 去抖
         "min_spell_days": 5,
 
-        # 输出与可视化
-        "save_labeled_series": True,
-        "make_shading_fig": True,
-        "shading_fig_tau": 0.0,          # 只对某个 tau 画阴影资金曲线（避免图太多）
-        "shading_fig_strategy": "model",# "model" or "always_long" etc.
+        # 输出
+        "save_equity_shading_fig": True,
+        "plot_top_n": 3,                        # 最多对多少个 (model,H,tau,strategy) 画阴影资金曲线（避免图太多）
     },
 
     # -----------------------------
-    # 滚动窗口重要性（Rolling Importance）
+    # 滚动窗口重要性
     # -----------------------------
     "rolling_importance": {
         "enable": True,
-
-        # 滚动参数
         "window": 252,
         "step": 21,
         "sample_n": 500,
         "n_repeats": 3,
         "random_state": 42,
 
-        # 仅树模型输出 TreeSHAP
+        # 只对哪些模型计算 rolling importance（None 表示跟随 selection）
+        # 强烈建议先只做树模型（XGBoost/LightGBM），深度模型滚动训练成本较高
+        "only_models": None,                    # e.g. ["XGBoost","LightGBM"]
+
+        # TreeSHAP（仅树模型）
         "enable_treeshap_for_tree_models": True,
 
-        # 控制算力（先 smoke test，避免一次性算太久）
-        "max_windows": None,  # None 表示不限制
-
-        # 如果只想对部分模型做滚动重要性，可填列表；None 表示对 selection 的全做
-        "only_models": None,
+        # 运行保护
+        "max_windows": None,                    # 限制最多计算多少个窗口（None=全算）
+        "min_train_size": 200,                  # 训练样本太少则跳过窗口
     },
 
     # -----------------------------
-    # 滚动重要性可视化（仅读取 rolling_importance_long.csv，不重复训练）
+    # 滚动重要性可视化（只读 CSV，不重训模型）
     # -----------------------------
     "rolling_importance_plots": {
         "enable": True,
-        "methods": ["permutation", "treeshap"],
+        "methods": ["permutation", "treeshap_xgb", "treeshap_lgbm"],
         "top_k": 20,
         "top_k_lines": 8,
-        "normalize": "none",      # "none" | "sum_to_one" | "abs_sum_to_one"
-        "smooth_windows": 1,        # 1=不平滑；3/5=轻度平滑
-        "formats": ["png"],        # 可加 "pdf" 便于直接插入报告
-
-        # 中文字体（按你们机器情况调整；若为空则不改 rcParams）
-        "font_sans_serif": ["SimHei", "Arial Unicode MS", "Microsoft YaHei"],
-        "fix_unicode_minus": True,
+        "normalize": "abs_sum_to_one",   # "none" | "sum_to_one" | "abs_sum_to_one"
+        "smooth_windows": 1,              # 1=不平滑；3/5=轻度平滑
+        "formats": ["png"],             # 可加 "pdf" 直接用于论文
     },
 
     # -----------------------------
-    # Manifest / 日志
+    # Manifest（实验元数据）
     # -----------------------------
     "manifest": {
         "enable": True,
+        "capture_versions": True,
     },
-    "log_level": "INFO",
 }
