@@ -289,39 +289,40 @@ def run_data_processor() -> str:
         row_filter.to_excel(writer, sheet_name="row_filtering", index=False)
 
     # 10) 表格输出
+    h_suffix = f"_H{h}"
     t1 = table1_variable_summary(dd, LOWFREQ_LAG)
-    t1.to_excel(os.path.join(tables_dir, "表1_变量清单与处理口径.xlsx"), index=False)
-    miss_raw.to_excel(os.path.join(tables_dir, "表2_缺失率与样本覆盖.xlsx"), index=False)
-    desc.to_excel(os.path.join(tables_dir, "表3_描述统计.xlsx"), index=False)
-    row_filter.to_excel(os.path.join(tables_dir, "表4_样本筛选统计.xlsx"), index=False)
+    t1.to_excel(os.path.join(tables_dir, f"表1_变量清单与处理口径{h_suffix}.xlsx"), index=False)
+    miss_raw.to_excel(os.path.join(tables_dir, f"表2_缺失率与样本覆盖{h_suffix}.xlsx"), index=False)
+    desc.to_excel(os.path.join(tables_dir, f"表3_描述统计{h_suffix}.xlsx"), index=False)
+    row_filter.to_excel(os.path.join(tables_dir, f"表4_样本筛选统计{h_suffix}.xlsx"), index=False)
 
     # 11) 图形输出
     if RUN.get("enable_plots", False):
         dpi = int(PLOTS.get("dpi", 220))
-        plot1_y_timeseries(y, f"图1 USD 持有期对数收益标签（h={h}）时间序列", os.path.join(figures_dir, "图1_USD持有期对数收益标签时间序列.png"),dpi=dpi)
+        plot1_y_timeseries(y, f"图1 USD 持有期对数收益标签（h={h}）时间序列", os.path.join(figures_dir, f"图1_USD持有期对数收益标签时间序列{h_suffix}.png"),dpi=dpi)
 
         key_cols = PLOTS.get("plot2_vars", ["VIX", "US_TermSpread", "WTI", "GOLD", "EPU_D"])
-        plot2_key_exogenous_subplots(dataset_raw, key_cols, "图2 关键外生变量时间序列", os.path.join(figures_dir, "图2_关键外生变量时间序列.png"), dpi=dpi)
+        plot2_key_exogenous_subplots(dataset_raw, key_cols, "图2 关键外生变量时间序列", os.path.join(figures_dir, f"图2_关键外生变量时间序列{h_suffix}.png"), dpi=dpi)
 
         heat_cols = PLOTS.get("plot3_vars", [y.name, "VIX", "US_TermSpread", "WTI", "GOLD", "EPU_D"])
-        plot3_correlation_heatmap(dataset_raw.dropna(axis=0, how="any"), heat_cols, "图3 核心变量相关性热力图", os.path.join(figures_dir, "图3_相关性热力图.png"), dpi=dpi)
+        plot3_correlation_heatmap(dataset_raw.dropna(axis=0, how="any"), heat_cols, "图3 核心变量相关性热力图", os.path.join(figures_dir, f"图3_相关性热力图{h_suffix}.png"), dpi=dpi)
 
         top_n = int(PLOTS.get("plot4_top_n", 30))
-        plot4_missing_bar(miss_raw, top_n, f"图4 缺失率分布（Top {top_n}）", os.path.join(figures_dir, "图4_缺失分布可视化.png"), dpi=dpi)
+        plot4_missing_bar(miss_raw, top_n, f"图4 缺失率分布（Top {top_n}）", os.path.join(figures_dir, f"图4_缺失分布可视化{h_suffix}.png"), dpi=dpi)
 
-        plot5_lowfreq_lag_schematic("图5 低频变量滞后与日度映射示意", os.path.join(figures_dir, "图5_低频滞后与日度映射示意图.png"), dpi=dpi)
+        plot5_lowfreq_lag_schematic("图5 低频变量滞后与日度映射示意", os.path.join(figures_dir, f"图5_低频滞后与日度映射示意图{h_suffix}.png"), dpi=dpi)
 
     # 12) manifest + meta 归档
     manifest_df = pd.DataFrame([
-        {"type": "table", "id": "T1", "file": "表1_变量清单与处理口径.xlsx"},
-        {"type": "table", "id": "T2", "file": "表2_缺失率与样本覆盖.xlsx"},
-        {"type": "table", "id": "T3", "file": "表3_描述统计.xlsx"},
-        {"type": "table", "id": "T4", "file": "表4_样本筛选统计.xlsx"},
-        {"type": "figure", "id": "F1", "file": "图1_USD持有期对数收益标签时间序列.png"},
-        {"type": "figure", "id": "F2", "file": "图2_关键外生变量时间序列.png"},
-        {"type": "figure", "id": "F3", "file": "图3_相关性热力图.png"},
-        {"type": "figure", "id": "F4", "file": "图4_缺失分布可视化.png"},
-        {"type": "figure", "id": "F5", "file": "图5_低频滞后与日度映射示意图.png"},
+        {"type": "table", "id": "T1", "file": f"表1_变量清单与处理口径{h_suffix}.xlsx"},
+        {"type": "table", "id": "T2", "file": f"表2_缺失率与样本覆盖{h_suffix}.xlsx"},
+        {"type": "table", "id": "T3", "file": f"表3_描述统计{h_suffix}.xlsx"},
+        {"type": "table", "id": "T4", "file": f"表4_样本筛选统计{h_suffix}.xlsx"},
+        {"type": "figure", "id": "F1", "file": f"图1_USD持有期对数收益标签时间序列{h_suffix}.png"},
+        {"type": "figure", "id": "F2", "file": f"图2_关键外生变量时间序列{h_suffix}.png"},
+        {"type": "figure", "id": "F3", "file": f"图3_相关性热力图{h_suffix}.png"},
+        {"type": "figure", "id": "F4", "file": f"图4_缺失分布可视化{h_suffix}.png"},
+        {"type": "figure", "id": "F5", "file": f"图5_低频滞后与日度映射示意图{h_suffix}.png"},
     ])
     with pd.ExcelWriter(os.path.join(meta_dir, f"{file_stem}_manifest.xlsx"), engine="openpyxl") as writer:
         manifest_df.to_excel(writer, sheet_name="manifest", index=False)

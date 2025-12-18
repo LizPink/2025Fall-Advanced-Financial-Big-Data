@@ -103,15 +103,15 @@ RUN: Dict[str, Any] = {
     # 模型库开关
     # -------------------------
     "models": {
-        "RandomWalk": False,     # 基准模型
-        "Ridge": False,
-        "Lasso": False,
-        "ElasticNet": False,
-        "RandomForest": False,
-        "XGBoost": False,
-        "LightGBM": False,
+        "RandomWalk": True,     # 基准模型
+        "Ridge": True,
+        "Lasso": True,
+        "ElasticNet": True,
+        "RandomForest": True,
+        "XGBoost": True,
+        "LightGBM": True,
         "MLP": False,
-        "LSTM": True,
+        "LSTM": False,
         "Transformer": False,
     },
 
@@ -160,21 +160,21 @@ RUN: Dict[str, Any] = {
             "l1_ratio": [0.2, 0.4, 0.6, 0.8],
         },
         "RandomForest": {
-            "n_estimators": [300, 800],
+            "n_estimators": [500, 800, 1000],
             "max_depth": [None, 5, 10],
             "min_samples_leaf": [1, 5, 10],
             "max_features": ["sqrt", 0.3, 0.5],
         },
         "XGBoost": {
-            "n_estimators": [500, 1000],
+            "n_estimators": [500, 800, 1000],
             "max_depth": [2, 3, 4],
             "learning_rate": [0.01, 0.05, 0.1],
             "subsample": [0.8, 1.0],
             "colsample_bytree": [0.8, 1.0],
-            "reg_lambda": [1.0, 5.0],
+            "reg_lambda": [1.0, 3.0, 5.0],
         },
         "LightGBM": {
-            "n_estimators": [500, 1000],
+            "n_estimators": [800, 1000],
             "num_leaves": [31, 63, 127],
             "learning_rate": [0.008, 0.01, 0.05],
             "subsample": [0.8, 1.0],

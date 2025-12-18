@@ -22,7 +22,7 @@ RUN = {
     # 输出目录（会在当前脚本同级创建 Data/）
     "output_dir": "../output/step1",
     "dataset_prefix": "Data_D",
-    "forecast_horizon_days": 1,
+    "forecast_horizon_days": 20,
 
     "y_sheet": "USD",
     "y_date_col": "日期",
@@ -56,9 +56,8 @@ PLOTS = {
     "font_family_candidates": [
         "Microsoft YaHei",   # Windows
         "SimHei",            # Windows
-        "PingFang SC",       # macOS
-        "Noto Sans CJK SC",  # Linux
-        "Arial Unicode MS",
+        "SimSun",           # 宋体（可选）
+        "Arial",            # 兜底
     ],
     "base_font_size": 11,
     "dpi": 220,
