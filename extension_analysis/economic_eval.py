@@ -421,7 +421,7 @@ def run_economic_layer(
         plot_strategies = list(cfg.get("plot_strategies", ["model"]))
         tau_for_plot = [tau_list[0]] if len(tau_list) > 0 else [0.0]
 
-        trades_long = pd.read_csv(str(outputs["trades_long_path"]), encoding="utf-8")
+        trades_long = pd.read_csv(str(outputs["trades_long_path"]), encoding="utf-8", low_memory=False)
         trades_long["date"] = pd.to_datetime(trades_long["date"])
 
         for c in combos_sorted:

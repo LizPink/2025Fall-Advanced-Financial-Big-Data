@@ -32,7 +32,7 @@
   "io_contract": {
     "enable": true,
     "check_y_true_alignment": true,
-    "alignment_max_abs_diff": 1e-08,
+    "alignment_max_abs_diff": 1e-10,
     "alignment_sample_n": 200
   },
   "economic": {
@@ -85,10 +85,10 @@
     },
     "min_spell_days": 5,
     "save_equity_shading_fig": true,
-    "plot_top_n": 3
+    "plot_top_n": 0
   },
   "rolling_importance": {
-    "enable": false,
+    "enable": true,
     "window": 252,
     "step": 21,
     "sample_n": 500,
@@ -104,10 +104,11 @@
     ],
     "enable_treeshap_for_tree_models": true,
     "max_windows": null,
-    "min_train_size": 200
+    "min_train_size": 200,
+    "progress_every_windows": 1
   },
   "rolling_importance_plots": {
-    "enable": false,
+    "enable": true,
     "methods": [
       "permutation",
       "treeshap_xgb",

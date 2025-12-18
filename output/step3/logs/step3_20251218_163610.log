@@ -1,0 +1,31 @@
+2025-12-18 16:36:10,055 | INFO | Matplotlib 字体候选=['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'Noto Sans CJK SC', 'DejaVu Sans'] | 实际启用=['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+2025-12-18 16:36:10,056 | INFO | 读取 Step2 config_snapshot: C:\Users\13377\Desktop\Financial-Big-Data-V2.0\output\step2\meta\config_snapshot.json
+2025-12-18 16:36:10,058 | INFO | Step3 扫描到 predictions 文件=40 | 选中=24
+2025-12-18 16:36:10,058 | INFO | 示例 combo: {'model': 'ElasticNet', 'H': 1, 'path': 'C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step2\\datasets\\predictions_ElasticNet_H1.csv'}
+2025-12-18 16:36:11,175 | INFO | ElasticNet-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:12,054 | INFO | ElasticNet-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:13,322 | INFO | ElasticNet-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:14,553 | INFO | ElasticNet-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:15,818 | INFO | Lasso-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:17,018 | INFO | Lasso-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:18,207 | INFO | Lasso-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:19,412 | INFO | Lasso-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:20,500 | INFO | LightGBM-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:21,474 | INFO | LightGBM-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:22,377 | INFO | LightGBM-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:23,555 | INFO | LightGBM-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:24,714 | INFO | RandomForest-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:25,877 | INFO | RandomForest-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:26,763 | INFO | RandomForest-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:27,903 | INFO | RandomForest-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:29,115 | INFO | Ridge-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:30,246 | INFO | Ridge-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:31,013 | INFO | Ridge-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:31,999 | INFO | Ridge-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:32,832 | INFO | XGBoost-H1 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.899e-17 | threshold=1.000e-10
+2025-12-18 16:36:33,983 | INFO | XGBoost-H10 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.714e-17 | threshold=1.000e-10
+2025-12-18 16:36:34,885 | INFO | XGBoost-H20 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.541e-17 | threshold=1.000e-10
+2025-12-18 16:36:36,042 | INFO | XGBoost-H5 | y_true 对齐检查 | n_check=200 | max_abs_diff=9.888e-17 | threshold=1.000e-10
+2025-12-18 16:36:54,346 | INFO | VIX 阴影资金曲线已生成: 24 张
+2025-12-18 16:36:55,486 | INFO | [滚动重要性] 开始: model=ElasticNet | H=1 | windows=37 | window=252 | step=21 | sample_n=500 | repeats=3
+2025-12-18 16:36:55,487 | INFO | [滚动重要性] 进度: ElasticNet-H1 窗口 1/37 | window_end=2022-11-15

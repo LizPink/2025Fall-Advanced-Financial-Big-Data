@@ -68,6 +68,44 @@ def _parse_best_params(best_params_csv: str) -> Dict[Tuple[str, int], Dict[str, 
 def _infer_is_tree(model_name: str) -> bool:
     return model_name in ("XGBoost", "LightGBM")
 
+def _subsample_rows(X: np.ndarray, sample_n: Optional[int], random_state: int) -> np.ndarray:
+    """对 X 做随机子采样（用于 TreeSHAP 加速；Permutation importance 内部已支持 sample_n）。"""
+    if sample_n is None:
+        return X
+    n = int(len(X))
+    k = int(sample_n)
+    if n <= k:
+        return X
+    rng = np.random.default_rng(int(random_state))
+    idx = rng.choice(n, size=k, replace=False)
+    idx.sort()
+    return np.asarray(X)[idx]
+
+
+def _unwrap_estimator_for_treeshap(model_obj: Any) -> Any:
+    """尽量把各种 wrapper 解包成“原生树模型”估计器，以便调用 pred_contrib(s)。
+
+    说明
+    - Step2 的 build_model 会包一层 FittedModel
+    - XGBoost/LightGBM 还可能包 _FitFallback / _XGBDMatrixPredictor / _LGBMPredictor
+    - 这里尽量向下拿到 XGBRegressor / LGBMRegressor（或 sklearn Pipeline 的最终 model）
+    """
+    est = model_obj
+    # 1) Step2 的 FittedModel
+    if hasattr(est, "model"):
+        est = getattr(est, "model")
+    # 2) GPU fallback wrapper
+    if hasattr(est, "_active"):
+        est = getattr(est, "_active")
+    # 3) predictor wrapper（.est 指向真实 estimator）
+    if hasattr(est, "est"):
+        est = getattr(est, "est")
+    # 4) sklearn Pipeline
+    if hasattr(est, "named_steps") and "model" in est.named_steps:
+        est = est.named_steps["model"]
+    return est
+
+
 def _build_model_compat(model: str, best_params: Dict[str, Any], X_train: np.ndarray, snap: Dict[str, Any]):
     """
     兼容不同版本/不同签名的 build_model：
@@ -238,7 +276,7 @@ def run_rolling_importance(
                 continue
 
             # 建模（复用 Step2 build_model），并注入 best_params（兼容不同函数签名）
-            model_obj, _ = _build_model_compat(
+            model_obj = _build_model_compat(
                 model=model,
                 best_params=best_params,
                 X_train=X_train,
@@ -254,22 +292,22 @@ def run_rolling_importance(
             )
 
             # permutation importance（通用）
+            # 注意：这里复用 utils.step2.explain.permutation_importance 的签名（X/y，不是 X_test/y_test）。
             imp_perm = permutation_importance(
                 model=model_obj,
-                X_test=X_win,
-                y_test=y_win,
+                X=X_win,
+                y=y_win,
                 feature_names=data.feature_names,
-                metric="rmse",
-                n_repeats=n_repeats,
                 sample_n=sample_n,
-                random_seed=random_state,
+                n_repeats=n_repeats,
+                random_state=random_state,
             )
 
             log.debug(
                 f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
-                f"Permutation importance 完成 | 返回 {len(imp_perm)} 个特征"
+                f"Permutation importance 完成 | 返回 {len(imp_perm.feature_names)} 个特征"
             )
-            for r in imp_perm:
+            for feat, imp in zip(imp_perm.feature_names, imp_perm.importances):
                 rows.append({
                     "model": model,
                     "H": H,
@@ -277,35 +315,44 @@ def run_rolling_importance(
                     "window_end": pd.to_datetime(data.dates[window_end]),
                     "window_start": pd.to_datetime(data.dates[window_start]),
                     "n_obs": int(window),
-                    "feature": r.get("feature"),
-                    "importance": float(r.get("importance", 0.0)),
+                    "feature": str(feat),
+                    "importance": float(imp),
                 })
 
             # TreeSHAP（仅树模型）
+            # 说明：utils.step2.explain.treeshap_importance_* 依赖 pred_contrib(s)，需要尽量拿到“原生 estimator”。
             if enable_treeshap and _infer_is_tree(model):
+                est_for_shap = _unwrap_estimator_for_treeshap(model_obj)
+                X_shap = _subsample_rows(X_win, sample_n=sample_n, random_state=random_state)
+
                 if model == "XGBoost":
-                    imp_shap = treeshap_importance_xgb(model_obj, X_win, data.feature_names, sample_n=sample_n)
+                    imp_shap = treeshap_importance_xgb(est_for_shap, X_shap, data.feature_names)
                     method = "treeshap_xgb"
                 else:
-                    imp_shap = treeshap_importance_lgbm(model_obj, X_win, data.feature_names, sample_n=sample_n)
+                    imp_shap = treeshap_importance_lgbm(est_for_shap, X_shap, data.feature_names)
                     method = "treeshap_lgbm"
 
-                log.debug(
-                    f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
-                    f"TreeSHAP 完成 | method={method} | 返回 {len(imp_shap)} 个特征"
-                )
-
-                for r in imp_shap:
-                    rows.append({
-                        "model": model,
-                        "H": H,
-                        "method": method,
-                        "window_end": pd.to_datetime(data.dates[window_end]),
-                        "window_start": pd.to_datetime(data.dates[window_start]),
-                        "n_obs": int(window),
-                        "feature": r.get("feature"),
-                        "importance": float(r.get("importance", 0.0)),
-                    })
+                if imp_shap is not None:
+                    log.debug(
+                        f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                        f"TreeSHAP 完成 | method={method} | 返回 {len(imp_shap.feature_names)} 个特征"
+                    )
+                    for feat, imp in zip(imp_shap.feature_names, imp_shap.importances):
+                        rows.append({
+                            "model": model,
+                            "H": H,
+                            "method": method,
+                            "window_end": pd.to_datetime(data.dates[window_end]),
+                            "window_start": pd.to_datetime(data.dates[window_start]),
+                            "n_obs": int(window),
+                            "feature": str(feat),
+                            "importance": float(imp),
+                        })
+                else:
+                    log.debug(
+                        f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                        f"TreeSHAP 跳过（当前环境/模型不支持 pred_contrib）"
+                    )
 
         log.info(f"[滚动重要性] 完成: model={model} | H={H} | 用时 {time.time()-t_model0:.1f}s")
 

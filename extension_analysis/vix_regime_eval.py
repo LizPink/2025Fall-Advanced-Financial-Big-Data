@@ -141,7 +141,7 @@ def run_vix_regime_eval(
 
     annual_days = int(run_cfg.get("economic", {}).get("annual_days", 252))
 
-    trades = pd.read_csv(trades_long_path, encoding="utf-8")
+    trades = pd.read_csv(trades_long_path, encoding="utf-8", low_memory=False)
     trades["date"] = pd.to_datetime(trades["date"])
 
     tables_dir = Path(out_dirs["tables"])
