@@ -86,14 +86,14 @@ RUN: Dict[str, Any] = {
         "by_model": {
             # 如果希望某个模型在所有 H 下都用同一个频率，可写在这里
             "MLP": 5,
-            "LSTM": 5,
-            "Transformer": 5,
+            "LSTM": 10,
+            "Transformer": 10,
         },
         "by_model_h": {
             # 如果希望随 H 调整（推荐），在这里覆盖
-            "MLP": {1: 5, 5: 5, 10: 5, 20: 5},
-            "LSTM": {1: 5, 5: 5, 10: 5, 20: 5},
-            "Transformer": {1: 5, 5: 5, 10: 5, 20: 5},
+            "MLP": {1: 5, 5: 5, 10: 10, 20: 10},
+            "LSTM": {1: 10, 5: 10, 10: 20, 20: 20},
+            "Transformer": {1: 10, 5: 10, 10: 20, 20: 20},
         },
         # 可选：只按 H 覆盖（不区分模型）
         "by_h": {},
@@ -120,7 +120,6 @@ RUN: Dict[str, Any] = {
     # 说明
     # - Torch 模型（MLP/LSTM/Transformer）只要 device 设为 "cuda:*" 且 torch.cuda.is_available() 即会使用 GPU。
     # - XGBoost / LightGBM 需要安装支持 GPU 的版本；若未编译 GPU 支持，将在训练时报错。
-    # - 为了让你们“只改 config”即可切换 CPU/GPU，本项目会在 build_model 时自动注入必要的 GPU 参数。
     "gpu": {
         "enable": True,
         "device": "cuda:0",             # torch 默认 device
@@ -132,7 +131,7 @@ RUN: Dict[str, Any] = {
             "LSTM": True,
             "Transformer": True,
         },
-        # 额外注入到 XGBoost / LightGBM 的 GPU 参数（不放进 param_grid，避免组合爆炸）
+        # 额外输入到 XGBoost / LightGBM 的 GPU 参数
         "xgboost": {
             "device": "cuda",
             "tree_method": "hist",
@@ -186,35 +185,37 @@ RUN: Dict[str, Any] = {
             "force_col_wise": [True],
         },
         "MLP": {
-            "hidden_layer_sizes": [(64,), (64,32), (128,64), (128,64,32)],
+            "hidden_layer_sizes": [(16,), (32,), (64,), (32,16), (64,32)],
             "activation": ["relu", "tanh"],
-            "alpha": [1e-5, 1e-4, 1e-3],
+            "alpha": [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0],
             "learning_rate": ["constant", "adaptive"],
             "learning_rate_init": [1e-3, 5e-4],
-            "batch_size": [64, 128],
-            "max_iter": [1500],
+            "batch_size": [64, 128, 256],
+            "max_iter": [2000],
+            # 强烈建议：开启早停，避免 OOS 爆掉
+            "early_stopping": [True],
+            "n_iter_no_change": [20],
         },
         # 序列模型：建议先固定少量组合，避免组合爆炸
         "LSTM": {
-            "seq_len": [60],
-            "hidden_size": [32, 64, 128],
-            "num_layers": [3],
-            "dropout": [0.1, 0.2],
-            "lr": [1e-3, 5e-4],
-            "batch_size": [256],
-            "epochs": [30],
-            "dropout": [0.1, 0.2],
+            "seq_len": [5, 10, 20],
+            "hidden_size": [16, 32, 64],
+            "num_layers": [2, 3, 4],
+            "dropout": [0.2, 0.4],
+            "lr": [1e-3, 5e-4, 1e-4],
+            "batch_size": [256, 512],
+            "epochs": [60, 120],
             "device": ["cuda:0"],
         },
         "Transformer": {
-            "seq_len": [40, 80],
+            "seq_len": [80],
             "d_model": [64, 128],
-            "nhead": [2, 4, 8],
-            "num_layers": [1, 2, 3],
+            "nhead": [4, 8],
+            "num_layers": [3],
             "dropout": [0.1, 0.2],
             "lr": [1e-3, 5e-4],
-            "batch_size": [128, 256, 512],
-            "epochs": [20, 30],
+            "batch_size": [256, 512],
+            "epochs": [30],
             "device": ["cuda:0"],
         },
     },
