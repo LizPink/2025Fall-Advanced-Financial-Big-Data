@@ -2,18 +2,19 @@
 """Step3：滚动窗口重要性稳定性（Rolling Feature Importance Stability）
 
 目标
-- 检查模型在不同时间窗口下的特征重要性是否稳定（是否随时间漂移）
+- 检查模型在不同时间窗口下的特征重要性是否稳定
+- 输出可用于论文附录（例如“特征稳定性分析”）
 
 方法
-- permutation importance：通用（所有模型都可用），解释一致但计算量较大
-- TreeSHAP：仅树模型（XGBoost/LightGBM），使用 pred_contrib(s) 计算 mean(|SHAP|)
+- permutation importance：通用（所有模型都可尝试），计算量较大但解释一致
+- TreeSHAP：仅树模型（XGBoost/LightGBM），速度通常更快、解释更精细
 
 重要说明（工程侧）
-- 深度学习模型在滚动窗口内反复训练成本很高，你们已决定 Step3 仅跑 6 个机器学习模型，因此本模块默认跳过深度模型。
-- 为与 Step2 口径一致，默认读取 Step2 的 best_params.csv 作为窗口内训练的超参数来源。
+- deep 模型在滚动窗口上反复训练代价很大；建议在 config 里只做树模型
+- 为了与 Step2 保持口径一致，默认读取 Step2 的 best_params.csv 作为窗口内训练的超参
 
 输出
-- tables/rolling_importance_long.csv：长表 (model,H,method,window_start,window_end,feature,importance)
+- tables/rolling_importance_long.csv：长表 (model,H,method,window_end,feature,importance)
 - tables/rolling_importance_mean.csv：按 (model,H,method,feature) 聚合均值
 
 所有注释采用中文。
@@ -23,85 +24,79 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-# 复用 Step2 数据读取与拆分口径
 from utils.step2.data_loader import load_dataset
 from utils.step2.split_utils import train_test_split_time
-
-# 复用 Step2 模型工厂与解释工具
+import inspect
 from utils.step2.model_registry import build_model
 from utils.step2.explain import permutation_importance, treeshap_importance_xgb, treeshap_importance_lgbm
 
 
-TREE_SHAP_METHOD = {
+TREE_METHODS = {
     "XGBoost": "treeshap_xgb",
     "LightGBM": "treeshap_lgbm",
 }
 
 
 def _parse_best_params(best_params_csv: str) -> Dict[Tuple[str, int], Dict[str, Any]]:
-    """从 Step2 的 best_params.csv 读取 (model,H)->best_params。
-
-    兼容策略
-    - 若文件不存在：返回空字典并告警（Step3 将使用模型默认参数）
-    - 若 params_json 解析失败：该行视为 {}，不中断全局流程
-    """
+    """从 Step2 的 best_params.csv 读取 (model,H)->best_params。"""
     p = Path(best_params_csv)
     if not p.exists():
-        logging.getLogger("step3").warning(f"best_params.csv 不存在，将使用默认参数: {p}")
-        return {}
-
+        raise FileNotFoundError(f"best_params.csv 不存在: {p}")
     df = pd.read_csv(p)
-    required = {"model", "H", "params_json"}
-    if not required.issubset(set(df.columns)):
-        logging.getLogger("step3").warning(
-            f"best_params.csv 缺少必要列 {sorted(required)}，将使用默认参数 | columns={list(df.columns)}"
-        )
-        return {}
+    if "model" not in df.columns or "H" not in df.columns or "params_json" not in df.columns:
+        raise KeyError(f"best_params.csv 缺少必要列: model,H,params_json | columns={list(df.columns)}")
 
     out: Dict[Tuple[str, int], Dict[str, Any]] = {}
     for _, row in df.iterrows():
         model = str(row["model"])
         H = int(row["H"])
-        params_raw = row.get("params_json", "{}")
         try:
-            params = json.loads(params_raw) if isinstance(params_raw, str) else {}
-            if not isinstance(params, dict):
-                params = {}
+            params = json.loads(row["params_json"]) if isinstance(row["params_json"], str) else {}
         except Exception:
             params = {}
         out[(model, H)] = params
     return out
 
 
-def _maybe_subsample_rows(X: np.ndarray, y: np.ndarray, sample_n: Optional[int], random_state: int) -> Tuple[np.ndarray, np.ndarray]:
-    """为了加速 permutation/SHAP，在窗口内做一次可选的行抽样。"""
-    if sample_n is None:
-        return X, y
+def _infer_is_tree(model_name: str) -> bool:
+    return model_name in ("XGBoost", "LightGBM")
 
-    n = int(len(y))
-    k = int(sample_n)
-    if n <= 0 or n <= k:
-        return X, y
+def _build_model_compat(model: str, best_params: Dict[str, Any], X_train: np.ndarray, snap: Dict[str, Any]):
+    """
+    兼容不同版本/不同签名的 build_model：
+    - 只向 build_model 传递其签名中存在的参数
+    - 维度参数名可能是 input_dim / input_size / n_features / feature_dim 等
+    """
+    sig = inspect.signature(build_model)
+    allowed = set(sig.parameters.keys())
 
-    rng = np.random.default_rng(int(random_state))
-    idx = rng.choice(n, size=k, replace=False)
-    idx.sort()
-    return X[idx], y[idx]
+    # 先准备候选参数
+    kwargs = {
+        "model_name": model,
+        "params": best_params,
+        "standardize_linear": True,
+        "standardize_mlp": True,
+        "standardize_sequence": True,
+        "gpu": snap.get("gpu", {}),
+    }
 
+    # 自动匹配“输入维度”参数名（如果 build_model 需要）
+    dim = int(X_train.shape[1])
+    for dim_key in ("input_dim", "input_size", "n_features", "feature_dim"):
+        if dim_key in allowed:
+            kwargs[dim_key] = dim
+            break
 
-def _iter_window_ends(test_start: int, test_end: int, window: int, step: int) -> List[int]:
-    """生成窗口右端点序列（包含右端点）。"""
-    first = int(test_start) + int(window) - 1
-    if first > int(test_end):
-        return []
-    return list(range(first, int(test_end) + 1, int(step)))
-
+    # 过滤：只保留 build_model 签名允许的键
+    kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+    return build_model(**kwargs)
 
 def run_rolling_importance(
     run_cfg: Dict[str, Any],
@@ -114,7 +109,6 @@ def run_rolling_importance(
     step2_snapshot: Optional[Dict[str, Any]],
     out_dirs: Dict[str, str],
 ) -> Dict[str, Any]:
-    """滚动窗口重要性主入口。"""
     cfg = dict(run_cfg.get("rolling_importance", {}) or {})
     if not bool(cfg.get("enable", True)):
         return {}
@@ -132,12 +126,26 @@ def run_rolling_importance(
         only_models = [str(m) for m in only_models]
 
     enable_treeshap = bool(cfg.get("enable_treeshap_for_tree_models", True))
-
     max_windows = cfg.get("max_windows", None)
     if max_windows is not None:
         max_windows = int(max_windows)
 
     min_train_size = int(cfg.get("min_train_size", 200))
+
+    # 进度监控：每隔多少个窗口输出一次日志（1 表示每个窗口都输出）
+    progress_every = cfg.get("progress_every_windows", 1)
+    try:
+        progress_every = int(progress_every)
+    except Exception:
+        progress_every = 1
+    progress_every = max(1, progress_every)
+
+    tables_dir = Path(out_dirs["tables"])
+    tables_dir.mkdir(parents=True, exist_ok=True)
+
+    best_params_map = _parse_best_params(str(Path(step2_output_dir) / "tables" / "best_params.csv"))
+
+    rows = []
 
     # 与 Step2 一致的测试期划分口径
     snap = step2_snapshot or {}
@@ -147,19 +155,7 @@ def run_rolling_importance(
     test_start = snap.get("test_start", None)
     test_end = snap.get("test_end", None)
 
-    # backtest 口径（决定窗口内训练集怎么取）
-    bt_mode = str(snap.get("backtest_mode", "expanding"))
-    bt_train_window = int(snap.get("backtest_train_window", 2000))
-
-    tables_dir = Path(out_dirs["tables"])
-    tables_dir.mkdir(parents=True, exist_ok=True)
-
-    best_params_map = _parse_best_params(str(Path(step2_output_dir) / "tables" / "best_params.csv"))
-
     combos_sorted = sorted(combos, key=lambda x: (str(x.get("model")), int(x.get("H"))))
-
-    rows: List[Dict[str, Any]] = []
-    skipped = 0
 
     for c in combos_sorted:
         model = str(c["model"])
@@ -168,7 +164,6 @@ def run_rolling_importance(
         if only_models is not None and model not in only_models:
             continue
 
-        # Step1 数据读取
         data = load_dataset(
             dataset_dir=step1_dataset_dir,
             filename_template=dataset_file_template,
@@ -179,6 +174,7 @@ def run_rolling_importance(
             drop_cols=[],
         )
 
+        # Step2 的 test 划分（用于定义“滚动窗口在测试期上滑动”）
         train_val_idx, test_idx = train_test_split_time(
             dates=data.dates,
             mode=test_mode,
@@ -188,28 +184,41 @@ def run_rolling_importance(
             test_end=test_end,
         )
 
-        if len(test_idx) == 0:
-            log.warning(f"{model}-H{H} | 测试期为空，跳过 rolling importance")
-            continue
-
         best_params = best_params_map.get((model, H), {})
 
+        # 仅在 test_idx 上滚动
         test_start_i = int(test_idx[0])
         test_end_i = int(test_idx[-1])
 
-        window_ends = _iter_window_ends(test_start_i, test_end_i, window=window, step=step)
+        # 窗口以 window_end 为右端点（包含），左端点为 window_end-window+1
+        # 训练集使用：window_start 之前的所有样本（expanding），再按需要裁剪成 rolling
+        window_end_candidates = list(range(test_start_i + window - 1, test_end_i + 1, step))
         if max_windows is not None:
-            window_ends = window_ends[:max_windows]
+            window_end_candidates = window_end_candidates[:max_windows]
 
-        if len(window_ends) == 0:
-            log.warning(f"{model}-H{H} | 测试期长度不足 window={window}，无可用窗口")
-            continue
+        log.info(
+            f"[滚动重要性] 开始: model={model} | H={H} | windows={len(window_end_candidates)} | "
+            f"window={window} | step={step} | sample_n={sample_n} | repeats={n_repeats}"
+        )
 
-        for window_end in window_ends:
-            window_start = int(window_end) - int(window) + 1
+        t_model0 = time.time()
+
+        for wi, window_end in enumerate(window_end_candidates):
+            if (wi == 0) or ((wi + 1) % progress_every == 0) or (wi + 1 == len(window_end_candidates)):
+                log.info(
+                    f"[滚动重要性] 进度: {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                    f"window_end={pd.to_datetime(data.dates[window_end]).date()}"
+                )
+
+            window_start = window_end - window + 1
             win_idx = np.arange(window_start, window_end + 1, dtype=int)
 
-            # 训练索引：只用 window_start 之前当时可得的历史
+            # 训练索引（只用 window_start 之前当时可得的历史）
+            # 与 Step2 的 backtest_mode 尽量一致：
+            # - expanding：0..window_start-1
+            # - rolling：仅用最近 backtest_train_window 个样本
+            bt_mode = str(snap.get("backtest_mode", "expanding"))
+            bt_train_window = int(snap.get("backtest_train_window", 2000))
             if bt_mode == "rolling":
                 left = max(0, window_start - bt_train_window)
                 train_idx = np.arange(left, window_start, dtype=int)
@@ -217,7 +226,6 @@ def run_rolling_importance(
                 train_idx = np.arange(0, window_start, dtype=int)
 
             if len(train_idx) < min_train_size:
-                skipped += 1
                 continue
 
             X_train = data.X[train_idx]
@@ -225,106 +233,95 @@ def run_rolling_importance(
             X_win = data.X[win_idx]
             y_win = data.y[win_idx]
 
-            # 保护：sample_n 不应超过窗口长度
-            sample_n_eff = None if sample_n is None else int(min(int(sample_n), int(len(y_win))))
-
-            # 建模与训练
-            try:
-                fm = build_model(
-                    model_name=model,
-                    params=best_params,
-                    random_seed=int(snap.get("random_seed", 42)),
-                    standardize_linear=True,
-                    standardize_mlp=True,
-                    standardize_sequence=True,
-                    gpu=snap.get("gpu", None),
-                )
-                fm.fit(X_train, y_train)
-            except Exception as e:
-                skipped += 1
-                log.warning(f"{model}-H{H} | 窗口训练失败，跳过该窗口 | err={type(e).__name__}: {e}")
+            # 序列模型滚动训练成本高、且需要序列构造；Step3 默认跳过
+            if model in ("LSTM", "Transformer"):
                 continue
 
-            # ----------------------
-            # permutation importance
-            # ----------------------
-            try:
-                Xp, yp = _maybe_subsample_rows(X_win, y_win, sample_n=sample_n_eff, random_state=random_state)
-                res = permutation_importance(
-                    model=fm,
-                    X=Xp,
-                    y=yp,
-                    feature_names=data.feature_names,
-                    sample_n=None,              # 已在这里抽样，避免二次抽样
-                    n_repeats=n_repeats,
-                    random_state=random_state,
+            # 建模（复用 Step2 build_model），并注入 best_params（兼容不同函数签名）
+            model_obj, _ = _build_model_compat(
+                model=model,
+                best_params=best_params,
+                X_train=X_train,
+                snap=snap,
+            )
+            # 训练
+            t0 = time.time()
+            model_obj.fit(X_train, y_train)
+
+            log.debug(
+                f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                f"训练完成 | 用时 {time.time()-t0:.2f}s"
+            )
+
+            # permutation importance（通用）
+            imp_perm = permutation_importance(
+                model=model_obj,
+                X_test=X_win,
+                y_test=y_win,
+                feature_names=data.feature_names,
+                metric="rmse",
+                n_repeats=n_repeats,
+                sample_n=sample_n,
+                random_seed=random_state,
+            )
+
+            log.debug(
+                f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                f"Permutation importance 完成 | 返回 {len(imp_perm)} 个特征"
+            )
+            for r in imp_perm:
+                rows.append({
+                    "model": model,
+                    "H": H,
+                    "method": "permutation",
+                    "window_end": pd.to_datetime(data.dates[window_end]),
+                    "window_start": pd.to_datetime(data.dates[window_start]),
+                    "n_obs": int(window),
+                    "feature": r.get("feature"),
+                    "importance": float(r.get("importance", 0.0)),
+                })
+
+            # TreeSHAP（仅树模型）
+            if enable_treeshap and _infer_is_tree(model):
+                if model == "XGBoost":
+                    imp_shap = treeshap_importance_xgb(model_obj, X_win, data.feature_names, sample_n=sample_n)
+                    method = "treeshap_xgb"
+                else:
+                    imp_shap = treeshap_importance_lgbm(model_obj, X_win, data.feature_names, sample_n=sample_n)
+                    method = "treeshap_lgbm"
+
+                log.debug(
+                    f"[滚动重要性] {model}-H{H} 窗口 {wi+1}/{len(window_end_candidates)} | "
+                    f"TreeSHAP 完成 | method={method} | 返回 {len(imp_shap)} 个特征"
                 )
 
-                for feat, imp in zip(res.feature_names, res.importances):
+                for r in imp_shap:
                     rows.append({
                         "model": model,
                         "H": H,
-                        "method": "permutation",
-                        "window_start": pd.to_datetime(data.dates[window_start]),
+                        "method": method,
                         "window_end": pd.to_datetime(data.dates[window_end]),
-                        "n_obs": int(len(win_idx)),
-                        "feature": str(feat),
-                        "importance": float(imp),
+                        "window_start": pd.to_datetime(data.dates[window_start]),
+                        "n_obs": int(window),
+                        "feature": r.get("feature"),
+                        "importance": float(r.get("importance", 0.0)),
                     })
-            except Exception as e:
-                skipped += 1
-                log.warning(f"{model}-H{H} | permutation importance 失败 | err={type(e).__name__}: {e}")
 
-            # ----------------------
-            # TreeSHAP（树模型）
-            # ----------------------
-            if enable_treeshap and model in TREE_SHAP_METHOD:
-                try:
-                    Xs, _ = _maybe_subsample_rows(X_win, y_win, sample_n=sample_n_eff, random_state=random_state)
-                    if model == "XGBoost":
-                        shap_res = treeshap_importance_xgb(fm.model, Xs, data.feature_names)
-                        method = "treeshap_xgb"
-                    else:
-                        shap_res = treeshap_importance_lgbm(fm.model, Xs, data.feature_names)
-                        method = "treeshap_lgbm"
-
-                    if shap_res is not None:
-                        for feat, imp in zip(shap_res.feature_names, shap_res.importances):
-                            rows.append({
-                                "model": model,
-                                "H": H,
-                                "method": method,
-                                "window_start": pd.to_datetime(data.dates[window_start]),
-                                "window_end": pd.to_datetime(data.dates[window_end]),
-                                "n_obs": int(len(win_idx)),
-                                "feature": str(feat),
-                                "importance": float(imp),
-                            })
-                except Exception as e:
-                    skipped += 1
-                    log.warning(f"{model}-H{H} | TreeSHAP 失败 | err={type(e).__name__}: {e}")
+        log.info(f"[滚动重要性] 完成: model={model} | H={H} | 用时 {time.time()-t_model0:.1f}s")
 
     long_df = pd.DataFrame(rows)
-
     long_path = str(tables_dir / "rolling_importance_long.csv")
     long_df.to_csv(long_path, index=False, encoding="utf-8")
 
-    if len(long_df) > 0:
-        mean_df = (
-            long_df
-            .groupby(["model", "H", "method", "feature"], dropna=False)["importance"]
-            .mean()
-            .reset_index()
-            .rename(columns={"importance": "importance_mean"})
-        )
-    else:
-        mean_df = pd.DataFrame(columns=["model", "H", "method", "feature", "importance_mean"])
-
+    mean_df = (
+        long_df
+        .groupby(["model", "H", "method", "feature"], dropna=False)["importance"]
+        .mean()
+        .reset_index()
+        .rename(columns={"importance": "importance_mean"})
+    )
     mean_path = str(tables_dir / "rolling_importance_mean.csv")
     mean_df.to_csv(mean_path, index=False, encoding="utf-8")
-
-    if skipped > 0:
-        log.info(f"rolling_importance | 跳过窗口数={skipped}（训练样本不足/训练失败/解释失败等）")
 
     return {
         "tables": [long_path, mean_path],

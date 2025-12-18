@@ -10,10 +10,7 @@
 
 所有注释采用中文（按小组规范）。
 """
-import warnings
-warnings.filterwarnings(
-    "ignore",
-    message="X does not have valid feature names, but LGBMRegressor was fitted with feature names")
+
 from extension_analysis.pipeline import main
 
 

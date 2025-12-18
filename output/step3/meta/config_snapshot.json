@@ -32,7 +32,7 @@
   "io_contract": {
     "enable": true,
     "check_y_true_alignment": true,
-    "alignment_max_abs_diff": 1e-10,
+    "alignment_max_abs_diff": 1e-08,
     "alignment_sample_n": 200
   },
   "economic": {
@@ -58,7 +58,6 @@
     "plot_strategies": [
       "model",
       "always_long",
-      "always_short",
       "cash"
     ]
   },

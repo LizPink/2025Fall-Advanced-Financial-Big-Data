@@ -1,6 +1,6 @@
 {
   "step": 3,
-  "created_at": "2025-12-18 15:29:04",
+  "created_at": "2025-12-18 15:51:41",
   "paths": {
     "step1_dataset_dir": "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step1\\datasets",
     "step2_output_dir": "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step2",
@@ -132,7 +132,6 @@
       "plot_strategies": [
         "model",
         "always_long",
-        "always_short",
         "cash"
       ]
     },
@@ -195,6 +194,12 @@
       "formats": [
         "png"
       ]
+    },
+    "io_contract": {
+      "enable": true,
+      "check_y_true_alignment": true,
+      "alignment_max_abs_diff": 1e-08,
+      "alignment_sample_n": 200
     }
   },
   "outputs": {
@@ -202,7 +207,8 @@
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\econ_metrics_by_phase.csv",
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\econ_metrics_phase_summary.csv",
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\econ_by_vix_regime_conditional.csv",
-      "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\econ_by_vix_episode.csv"
+      "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\econ_by_vix_episode.csv",
+      "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\tables\\vix_regime_missing_rate.csv"
     ],
     "datasets": [
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\datasets\\econ_trades_long.csv",
@@ -248,7 +254,12 @@
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\meta\\run_manifest.json",
       "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\meta\\config_snapshot.json"
     ],
-    "logs": []
+    "logs": [
+      "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\logs\\step3_20251218_155141.log"
+    ]
+  },
+  "logs": {
+    "log_file": "C:\\Users\\13377\\Desktop\\Financial-Big-Data-V2.0\\output\\step3\\logs\\step3_20251218_155141.log"
   },
   "versions": {
     "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",

@@ -2,12 +2,12 @@
 """Step3：基于 VIX 的分时期（Regime）检验
 
 输入
-- datasets/econ_trades_long.csv：经济层模块产出的交易级别长表
+- econ_trades_long.csv：经济层模块产出的交易级别长表
 - Step1 的 Data_D_{H}.xlsx（读取 date 与 VIX 列，用于贴 regime 标签）
 
 两种视角
 1) conditional：按 regime（low/mid/high）对交易样本分组计算绩效
-   - 仅做条件统计，不会“打散”时间顺序
+   - 不会“打散”时间顺序；只是对同一条时间序列做子样本条件统计
 
 2) episode：把 regime 合并为连续时段，再在每个 episode 内计算绩效
    - 方便在论文/答辩里叙事与可视化（例如“高 VIX 期间策略更好/更差”）
@@ -19,9 +19,6 @@
 去抖
 - hysteresis：双阈值状态机
 - min_spell_days：把过短片段压回 mid
-
-工程约定
-- 对于合并后仍缺失的 regime（例如 VIX 日期缺口），默认填充为 "mid"，并输出缺失率统计。
 
 所有注释采用中文。
 """
@@ -35,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import logging
 
 from utils.step2.data_loader import load_dataset
 from utils.step2.split_utils import train_test_split_time
@@ -51,21 +49,8 @@ from utils.step3.vix_thresholds import (
 from utils.step3.plot_utils import save_figure
 
 
-def _ann_scale(annual_days: int, H: int, use_non_overlapping: bool) -> float:
-    """年化系数（Sharpe 等）。
-
-    说明
-    - 非重叠持有期：交易序列的“频率”约为 annual_days / H
-    - 重叠持有期：交易序列按“日频”记录（每个日期都有一笔 H 日持有期交易），常用近似为 annual_days
-
-    注意
-    - 重叠持有期严格口径应考虑重叠导致的自相关；本项目默认以非重叠为主。
-    """
-    if bool(use_non_overlapping):
-        trades_per_year = float(annual_days) / float(max(1, H))
-    else:
-        trades_per_year = float(annual_days)
-    return math.sqrt(trades_per_year)
+def _ann_scale(annual_days: int, H: int) -> float:
+    return math.sqrt(float(annual_days) / float(max(1, H)))
 
 
 def _sharpe_ann(r: np.ndarray, ann_scale: float) -> float:
@@ -81,8 +66,6 @@ def _sharpe_ann(r: np.ndarray, ann_scale: float) -> float:
 
 def _max_drawdown(r: np.ndarray) -> float:
     r = np.asarray(r, dtype=float)
-    if len(r) == 0:
-        return float("nan")
     eq = np.exp(np.cumsum(r))
     peak = np.maximum.accumulate(eq)
     dd = (eq / peak) - 1.0
@@ -96,7 +79,7 @@ def _compute_metrics_for_subset(r_net: np.ndarray, ann_scale: float) -> Dict[str
         "mean_log_ret": float(np.mean(r_net)) if len(r_net) > 0 else float("nan"),
         "std_log_ret": float(np.std(r_net, ddof=1)) if len(r_net) > 1 else float("nan"),
         "sharpe_ann": _sharpe_ann(r_net, ann_scale=ann_scale),
-        "max_drawdown": _max_drawdown(r_net),
+        "max_drawdown": _max_drawdown(r_net) if len(r_net) > 0 else float("nan"),
         "hit_rate": float(np.mean(r_net > 0.0)) if len(r_net) > 0 else float("nan"),
     }
 
@@ -112,7 +95,8 @@ def _prepare_vix_series(
     """从 Step1 的 Data_D_{H}.xlsx 读取 date 与 VIX 列。
 
     说明
-    - 这里复用 utils.step2.data_loader.load_dataset，保证读取/排序口径与 Step2 一致。
+    - 这里复用 utils.step2.data_loader.load_dataset 以保证读取/排序口径一致
+    - load_dataset 会返回 df 全量，我们只取 date 与 vix_col
     """
     data = load_dataset(
         dataset_dir=step1_dataset_dir,
@@ -126,7 +110,6 @@ def _prepare_vix_series(
     df = data.df.copy()
     if vix_col not in df.columns:
         raise KeyError(f"Step1 数据缺少 VIX 列: {vix_col} | H={H}")
-
     out = df[[date_col, vix_col]].copy()
     out[date_col] = pd.to_datetime(out[date_col])
     out = out.sort_values(date_col).drop_duplicates(subset=[date_col]).reset_index(drop=True)
@@ -144,13 +127,11 @@ def run_vix_regime_eval(
     step2_snapshot: Optional[Dict[str, Any]],
     out_dirs: Dict[str, str],
 ) -> Dict[str, Any]:
-    """VIX 分时期检验主入口。"""
     cfg = dict(run_cfg.get("vix_regime", {}) or {})
     if not bool(cfg.get("enable", True)):
         return {}
 
     vix_col = str(cfg.get("vix_col", "VIX"))
-    methods = [str(x) for x in (cfg.get("methods", []) or [])]
     mode = str(cfg.get("mode", "quantile"))
     thr_source = str(cfg.get("threshold_source", "train_only"))
     min_spell_days = int(cfg.get("min_spell_days", 0))
@@ -160,7 +141,6 @@ def run_vix_regime_eval(
 
     annual_days = int(run_cfg.get("economic", {}).get("annual_days", 252))
 
-    # 读取经济层交易长表
     trades = pd.read_csv(trades_long_path, encoding="utf-8")
     trades["date"] = pd.to_datetime(trades["date"])
 
@@ -168,15 +148,16 @@ def run_vix_regime_eval(
     datasets_dir = Path(out_dirs["datasets"])
     figures_dir = Path(out_dirs["figures"])
 
-    out_tables: List[str] = []
-    out_datasets: List[str] = []
-    out_figures: List[str] = []
+    out_tables = []
+    out_datasets = []
+    out_figures = []
 
     # 为避免重复读取 Step1/VIX，按 H 缓存
     vix_cache: Dict[int, pd.DataFrame] = {}
 
     # 用于 train_only 阈值计算的 train_mask，需要 Step2 的 test split 口径
     def _get_train_mask_for_H(H: int, vix_df: pd.DataFrame) -> pd.Series:
+        # 默认采用 Step2 口径；若没有 snapshot，则退化为 last_ratio(0.2)
         snap = step2_snapshot or {}
         test_mode = str(snap.get("test_mode", "last_ratio"))
         test_ratio = float(snap.get("test_ratio", 0.2))
@@ -184,8 +165,8 @@ def run_vix_regime_eval(
         test_start = snap.get("test_start", None)
         test_end = snap.get("test_end", None)
 
-        dt = pd.to_datetime(vix_df[date_col]).to_numpy()
-        train_idx, _test_idx = train_test_split_time(
+        dt = vix_df[date_col].to_numpy()
+        train_idx, test_idx = train_test_split_time(
             dates=dt,
             mode=test_mode,
             test_ratio=test_ratio,
@@ -198,17 +179,14 @@ def run_vix_regime_eval(
         return mask
 
     # 输出：交易样本按 regime 分组（conditional）
-    cond_rows: List[Dict[str, Any]] = []
+    cond_rows = []
 
     # 输出：episode 级别
-    episode_rows: List[Dict[str, Any]] = []
+    episode_rows = []
 
     # 输出：各 H 的 regime 序列与 episode 表
-    regime_series_paths: List[str] = []
-    episode_table_paths: List[str] = []
-
-    # 输出：regime 缺失率统计
-    missing_rows: List[Dict[str, Any]] = []
+    regime_series_paths = []
+    episode_table_paths = []
 
     H_list = sorted({int(c["H"]) for c in combos})
 
@@ -223,8 +201,8 @@ def run_vix_regime_eval(
                 vix_col=vix_col,
             )
 
-        vix_df0 = vix_cache[H].copy()
-        vix_df = vix_df0.rename(columns={date_col: "date"})
+        vix_df = vix_cache[H]
+        vix_df = vix_df.rename(columns={date_col: "date"})
         vix_df["date"] = pd.to_datetime(vix_df["date"])
         vix_s = vix_df.set_index("date")[vix_col].astype(float)
 
@@ -234,13 +212,21 @@ def run_vix_regime_eval(
             regime = assign_regime_hysteresis(vix_s, fixed_thr)
         elif mode == "quantile":
             if thr_source == "train_only":
-                train_mask = _get_train_mask_for_H(H, vix_df0)
-                thr = compute_thresholds_train_only(vix=vix_df0[vix_col], train_mask=train_mask, quantiles_cfg=quantiles_cfg)
+                train_mask = _get_train_mask_for_H(H, vix_cache[H])
+                thr = compute_thresholds_train_only(
+                    vix=vix_cache[H][vix_col],
+                    train_mask=train_mask,
+                    quantiles_cfg=quantiles_cfg,
+                )
                 regime = assign_regime_hysteresis(vix_s, thr)
             elif thr_source == "expanding":
                 # fallback：使用 train_only 阈值避免早期 NaN
-                train_mask = _get_train_mask_for_H(H, vix_df0)
-                fallback_thr = compute_thresholds_train_only(vix=vix_df0[vix_col], train_mask=train_mask, quantiles_cfg=quantiles_cfg)
+                train_mask = _get_train_mask_for_H(H, vix_cache[H])
+                fallback_thr = compute_thresholds_train_only(
+                    vix=vix_cache[H][vix_col],
+                    train_mask=train_mask,
+                    quantiles_cfg=quantiles_cfg,
+                )
                 thr_df = compute_thresholds_expanding(vix_s, quantiles_cfg=quantiles_cfg)
                 regime = assign_regime_hysteresis_timevarying(vix_s, thr_df, fallback_thr=fallback_thr)
             else:
@@ -267,17 +253,10 @@ def run_vix_regime_eval(
         sub_trades = trades[trades["H"] == H].copy()
         sub_trades = sub_trades.merge(regime_df[["date", "regime"]], on="date", how="left")
 
-        # regime 缺失 -> 默认 mid，并记录缺失率
-        miss_rate = float(sub_trades["regime"].isna().mean()) if len(sub_trades) > 0 else 0.0
-        missing_rows.append({"H": H, "n_trades": int(len(sub_trades)), "regime_missing_rate": miss_rate})
-        sub_trades["regime"] = sub_trades["regime"].fillna("mid")
+        ann_scale = _ann_scale(annual_days=annual_days, H=H)
 
-        # 以 (model,strategy,tau,phase,use_non_overlapping) 分组后按 regime 条件统计
-        group_cols = ["model", "strategy", "tau", "phase", "use_non_overlapping"]
-        for keys, g in sub_trades.groupby(group_cols, dropna=False):
-            model, strategy, tau, phase, use_non_overlapping = keys
-            ann_scale = _ann_scale(annual_days=annual_days, H=H, use_non_overlapping=bool(use_non_overlapping))
-
+        for keys, g in sub_trades.groupby(["model", "strategy", "tau", "phase"], dropna=False):
+            model, strategy, tau, phase = keys
             for reg, gg in g.groupby("regime", dropna=False):
                 m = _compute_metrics_for_subset(gg["r_net"].to_numpy(dtype=float), ann_scale=ann_scale)
                 cond_rows.append({
@@ -286,13 +265,12 @@ def run_vix_regime_eval(
                     "strategy": strategy,
                     "tau": float(tau),
                     "phase": int(phase),
-                    "use_non_overlapping": bool(use_non_overlapping),
                     "regime": str(reg),
                     **m,
                 })
 
         # 4) episode 计算：以 episode 为单位，取该时间段内的交易样本
-        if "episode" in methods:
+        if "episode" in [str(x) for x in cfg.get("methods", [])]:
             for _, ep in episodes.iterrows():
                 start = pd.to_datetime(ep["start"])
                 end = pd.to_datetime(ep["end"])
@@ -302,10 +280,8 @@ def run_vix_regime_eval(
                 if len(in_ep) == 0:
                     continue
 
-                for keys, g in in_ep.groupby(group_cols, dropna=False):
-                    model, strategy, tau, phase, use_non_overlapping = keys
-                    ann_scale = _ann_scale(annual_days=annual_days, H=H, use_non_overlapping=bool(use_non_overlapping))
-
+                for keys, g in in_ep.groupby(["model", "strategy", "tau", "phase"], dropna=False):
+                    model, strategy, tau, phase = keys
                     m = _compute_metrics_for_subset(g["r_net"].to_numpy(dtype=float), ann_scale=ann_scale)
                     episode_rows.append({
                         "model": model,
@@ -313,7 +289,6 @@ def run_vix_regime_eval(
                         "strategy": strategy,
                         "tau": float(tau),
                         "phase": int(phase),
-                        "use_non_overlapping": bool(use_non_overlapping),
                         "episode_start": start,
                         "episode_end": end,
                         "episode_len": int(ep["length"]),
@@ -322,7 +297,7 @@ def run_vix_regime_eval(
                     })
 
     # 写出 conditional 表
-    if "conditional" in methods:
+    if "conditional" in [str(x) for x in cfg.get("methods", [])]:
         cond_df = pd.DataFrame(cond_rows)
         cond_path = str(tables_dir / "econ_by_vix_regime_conditional.csv")
         cond_df.to_csv(cond_path, index=False, encoding="utf-8")
@@ -335,75 +310,133 @@ def run_vix_regime_eval(
         ep_df.to_csv(ep_path, index=False, encoding="utf-8")
         out_tables.append(ep_path)
 
-    # 写出 regime 缺失率统计
-    miss_df = pd.DataFrame(missing_rows)
-    miss_path = str(tables_dir / "vix_regime_missing_rate.csv")
-    miss_df.to_csv(miss_path, index=False, encoding="utf-8")
-    out_tables.append(miss_path)
-
     out_datasets.extend(regime_series_paths)
     out_datasets.extend(episode_table_paths)
 
     # 资金曲线 + 阴影（高 VIX）
     if bool(cfg.get("save_equity_shading_fig", True)):
+        log = logging.getLogger("step3")
         try:
-            plot_top_n = int(cfg.get("plot_top_n", 3))
+            # 与经济层资金曲线保持同一口径：相同的 phase、相同的 tau_for_plot、相同的策略线条
+            econ_cfg = dict(run_cfg.get("economic", {}) or {})
+            plot_phase = int(econ_cfg.get("plot_phase", 0))
+            plot_strategies = list(econ_cfg.get("plot_strategies", ["model"]))
+            tau_list = list(econ_cfg.get("tau_list", [0.0]))
+            tau_for_plot = [float(tau_list[0])] if len(tau_list) > 0 else [0.0]
 
-            # 按 Sharpe（跨相位均值）粗略排序，挑前 plot_top_n 画图
-            phase_summary_path = Path(out_dirs["tables"]) / "econ_metrics_phase_summary.csv"
-            if phase_summary_path.exists():
-                summ = pd.read_csv(phase_summary_path)
-                sort_col = "sharpe_ann_mean"
-                top = summ.sort_values(sort_col, ascending=False).head(plot_top_n) if sort_col in summ.columns else summ.head(plot_top_n)
+            baselines = list(econ_cfg.get("baselines", []))
+            baseline_strategies = [str(s) for s in baselines if str(s) not in ("model", "")]
 
-                trades_long = trades.copy()
-                trades_long["date"] = pd.to_datetime(trades_long["date"])
+            # 默认：对所有 (model,H) 生成 vixshade 图；若 plot_top_n>0，则仅对 Sharpe 较高的前 N 个 (model,H) 生成
+            plot_top_n = cfg.get("plot_top_n", 0)
+            try:
+                plot_top_n = int(plot_top_n)
+            except Exception:
+                plot_top_n = 0
 
-                for _, row in top.iterrows():
-                    model = str(row["model"])
-                    H = int(row["H"])
-                    strategy = str(row.get("strategy", "model"))
-                    tau = float(row.get("tau", 0.0))
+            combos_unique = sorted({(str(c["model"]), int(c["H"])) for c in combos}, key=lambda x: (x[0], x[1]))
 
-                    # 默认使用 phase=0
-                    sub = trades_long[
-                        (trades_long["model"] == model)
-                        & (trades_long["H"] == H)
-                        & (trades_long["strategy"] == strategy)
-                        & (trades_long["tau"] == tau)
-                        & (trades_long["phase"] == 0)
-                    ].sort_values("date")
+            if plot_top_n > 0:
+                phase_summary_path = Path(out_dirs["tables"]) / "econ_metrics_phase_summary.csv"
+                if phase_summary_path.exists():
+                    summ = pd.read_csv(phase_summary_path)
+                    # 仅用策略为 model 的行来排序（避免 baseline 影响）
+                    summ = summ[(summ["strategy"] == "model") & (summ["model"] != "BASELINE")]
+                    # 尽量使用 sharpe_ann_mean
+                    sort_col = "sharpe_ann_mean" if "sharpe_ann_mean" in summ.columns else None
+                    if sort_col is not None:
+                        summ = summ.sort_values(sort_col, ascending=False)
+                    top_pairs = []
+                    for _, r in summ.iterrows():
+                        pair = (str(r["model"]), int(r["H"]))
+                        if pair not in top_pairs and pair in combos_unique:
+                            top_pairs.append(pair)
+                        if len(top_pairs) >= plot_top_n:
+                            break
+                    if len(top_pairs) > 0:
+                        combos_unique = top_pairs
 
-                    if len(sub) < 5:
-                        continue
+            trades_long = trades.copy()
+            trades_long["date"] = pd.to_datetime(trades_long["date"])
 
-                    eq = np.exp(np.cumsum(sub["r_net"].to_numpy(dtype=float)))
-
+            total_imgs = 0
+            for (model, H) in combos_unique:
+                for tau in tau_for_plot:
                     fig = plt.figure(figsize=(10, 4))
                     ax = fig.add_subplot(111)
-                    ax.plot(sub["date"].to_numpy(), eq, label=f"{model}-{strategy}-tau={tau}")
 
-                    # 阴影：使用该 H 的 episode 表，shade high
+                    # 逐条策略线画累计净值
+                    date_min, date_max = None, None
+                    any_line = False
+                    for strategy in plot_strategies:
+                        if str(strategy) in baseline_strategies:
+                            sub = trades_long[
+                                (trades_long["model"] == "BASELINE")
+                                & (trades_long["H"] == H)
+                                & (trades_long["phase"] == int(plot_phase))
+                                & (trades_long["strategy"] == str(strategy))
+                            ].sort_values("date")
+                        else:
+                            sub = trades_long[
+                                (trades_long["model"] == model)
+                                & (trades_long["H"] == H)
+                                & (trades_long["tau"] == float(tau))
+                                & (trades_long["phase"] == int(plot_phase))
+                                & (trades_long["strategy"] == str(strategy))
+                            ].sort_values("date")
+
+                        if len(sub) == 0:
+                            continue
+
+                        any_line = True
+                        eq = np.exp(np.cumsum(sub["r_net"].to_numpy(dtype=float)))
+                        ax.plot(sub["date"].to_numpy(), eq, label=str(strategy))
+
+                        d0 = pd.to_datetime(sub["date"].iloc[0])
+                        d1 = pd.to_datetime(sub["date"].iloc[-1])
+                        date_min = d0 if date_min is None else min(date_min, d0)
+                        date_max = d1 if date_max is None else max(date_max, d1)
+
+                    if not any_line or date_min is None or date_max is None:
+                        plt.close(fig)
+                        continue
+
+                    # 阴影：仅对测试期（资金曲线区间）内的 high episode 进行 shading，避免把 x 轴“拉回训练期”
                     ep_path = Path(out_dirs["datasets"]) / f"vix_episodes_H{H}.csv"
                     if ep_path.exists():
                         eps = pd.read_csv(ep_path)
                         for _, ep in eps.iterrows():
-                            if str(ep["regime"]) != "high":
+                            if str(ep.get("regime")) != "high":
                                 continue
                             s = pd.to_datetime(ep["start"])
                             e = pd.to_datetime(ep["end"])
-                            ax.axvspan(s, e, alpha=0.15)
 
-                    ax.set_title(f"资金曲线（高 VIX 阴影）| model={model} | H={H} | strategy={strategy} | tau={tau}")
+                            # 裁剪到 [date_min, date_max]，确保与 equity 图片区间对齐
+                            if e < date_min or s > date_max:
+                                continue
+                            s2 = max(s, date_min)
+                            e2 = min(e, date_max)
+                            if s2 <= e2:
+                                ax.axvspan(s2, e2, alpha=0.15)
+
+                    ax.set_title(f"资金曲线（高 VIX 阴影）| model={model} | H={H} | tau={tau} | phase={plot_phase}")
                     ax.set_xlabel("日期")
                     ax.set_ylabel("累计净值")
+                    ax.set_xlim(date_min, date_max)
                     ax.legend()
 
-                    out_path = str(figures_dir / f"equity_vixshade_{model}_H{H}_{strategy}_tau{tau}.png")
+                    out_path = str(figures_dir / f"equity_vixshade_{model}_H{H}_tau{tau}_phase{plot_phase}.png")
                     save_figure(fig, out_path, dpi=220)
                     out_figures.append(out_path)
-        except Exception:
-            # 可视化失败不应影响核心表格输出
-            pass
+                    total_imgs += 1
 
-    return {"tables": out_tables, "datasets": out_datasets, "figures": out_figures}
+            log.info(f"VIX 阴影资金曲线已生成: {total_imgs} 张")
+        except Exception as e:
+            # 可视化失败不应影响核心表格输出
+            log.warning(f"VIX 阴影资金曲线生成失败（已跳过）：{e}")
+
+    return {
+        "tables": out_tables,
+        "datasets": out_datasets,
+        "figures": out_figures,
+    }

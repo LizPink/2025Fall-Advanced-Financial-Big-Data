@@ -23,15 +23,11 @@
    - 生成折线图/热力图/Jaccard 稳定性图
 
 输出目录（默认）：../output/step3
-
-说明
-- 你们已决定：Step3 仅评估 6 个机器学习模型（不含深度学习模型）。
-- 所有注释采用中文（按小组规范）。
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 RUN: Dict[str, Any] = {
@@ -43,6 +39,8 @@ RUN: Dict[str, Any] = {
     "output_dir": "../output/step3",
 
     # 是否读取 Step2 的 config_snapshot.json 来复用 test split / backtest_mode 等口径
+    # True：优先采用 Step2 口径，保证 Step3 与 Step2 可比
+    # False：仅使用本 Step3 配置（不推荐）
     "inherit_step2_snapshot": True,
 
     # 日志
@@ -62,9 +60,9 @@ RUN: Dict[str, Any] = {
     # 说明：Step3 会扫描 Step2 的 predictions_*.csv，再按这里筛选
     # -----------------------------
     "selection": {
-        "models_include": ["Lasso", "Ridge", "ElasticNet", "RandomForest", "XGBoost", "LightGBM"],
+        "models_include": ["Lasso", "Ridge", "ElasticNet", "RandomForest", "XGBoost", "LightGBM"],     # "ALL" 或 ["Lasso","XGBoost",...]
         "models_exclude": [],
-        "H_include": "ALL",
+        "H_include": "ALL",          # "ALL" 或 [1,5,10,20]
         "H_exclude": [],
     },
 
@@ -82,10 +80,9 @@ RUN: Dict[str, Any] = {
     # -----------------------------
     "io_contract": {
         "enable": True,
-        "check_y_true_alignment": True,
-        # 注意：CSV/Excel 往返可能带来极小数值误差；1e-8 仍然非常严格
-        "alignment_max_abs_diff": 1e-8,
-        "alignment_sample_n": 200,
+        "check_y_true_alignment": True,   # 把 predictions 的 y_true 与 Step1 的 USD_{H} 做对齐检查（抽样/全量）
+        "alignment_max_abs_diff": 1e-10,  # 允许的最大绝对误差
+        "alignment_sample_n": 200,        # 抽样检查条数；None 表示全量（可能慢）
     },
 
     # -----------------------------
@@ -96,21 +93,21 @@ RUN: Dict[str, Any] = {
 
         # 交易规则
         "allow_short": True,
-        "tau_list": [0.0, 0.0005, 0.001],
-        "tc_bps": 1.0,
+        "tau_list": [0.0, 0.0005, 0.001],  # 开平仓阈值：|y_pred| <= tau -> 空仓
+        "tc_bps": 1.0,                     # 单边成本（bps），按仓位变化计费
 
         # 评估口径
         "annual_days": 252,
         "use_non_overlapping": True,
-        "phase_sweep": True,
+        "phase_sweep": True,               # phase=0..H-1 全扫
 
         # 基准策略
         "baselines": ["cash", "always_long", "always_short"],
 
         # 输出
-        "save_trades_long": True,
+        "save_trades_long": True,          # 保存“交易级别”长表（供 VIX/可视化复用）
         "save_equity_fig": True,
-        "plot_phase": 0,
+        "plot_phase": 0,                   # 画资金曲线时使用哪个相位（0..H-1）
         "plot_strategies": ["model", "always_long", "cash"],
     },
 
@@ -119,15 +116,22 @@ RUN: Dict[str, Any] = {
     # -----------------------------
     "vix_regime": {
         "enable": True,
-        "vix_col": "VIX",
+        "vix_col": "VIX",                      # Step1 数据集中 VIX 列名
         "methods": ["conditional", "episode"],
 
-        # regime 贴标时点：entry = 用 VIX_t 给 t->t+H 这笔交易贴标签
+        # regime 贴标时点：
+        # - "entry"：用 VIX_t 给 t->t+H 这笔交易贴标签（推荐，避免持有期内信息）
         "regime_on": "entry",
 
-        "mode": "quantile",
-        "threshold_source": "train_only",
+        # 阈值模式：分位数 or 固定阈值
+        "mode": "quantile",                    # "quantile" | "fixed"
 
+        # 阈值来源（无前视）：
+        # - "train_only"：用训练/验证期固定阈值，再用于测试期
+        # - "expanding"：对每个日期用历史 expanding 分位数（并 shift 1 天）
+        "threshold_source": "train_only",      # "train_only" | "expanding"
+
+        # hysteresis（双阈值）：进入/退出 low/high 的分位数
         "quantiles": {
             "enter_low": 0.30,
             "exit_low": 0.40,
@@ -135,6 +139,7 @@ RUN: Dict[str, Any] = {
             "exit_high": 0.60,
         },
 
+        # 固定阈值（可作为稳健性对照）
         "fixed_thresholds": {
             "enter_low": 15.0,
             "exit_low": 18.0,
@@ -142,10 +147,12 @@ RUN: Dict[str, Any] = {
             "exit_high": 22.0,
         },
 
+        # episode 去抖
         "min_spell_days": 5,
 
+        # 输出
         "save_equity_shading_fig": True,
-        "plot_top_n": 3,
+        "plot_top_n": 0,                        # 0 表示生成“全部” vixshade 图片；>0 则仅生成 Sharpe 较高的前 N 个 (model,H)
     },
 
     # -----------------------------
@@ -162,11 +169,15 @@ RUN: Dict[str, Any] = {
         # 只对哪些模型计算 rolling importance（None 表示跟随 selection）
         "only_models": ["Lasso", "Ridge", "ElasticNet", "RandomForest", "XGBoost", "LightGBM"],
 
+        # TreeSHAP（仅树模型）
         "enable_treeshap_for_tree_models": True,
 
         # 运行保护
-        "max_windows": None,
-        "min_train_size": 200,
+        "max_windows": None,                    # 限制最多计算多少个窗口（None=全算）
+        "min_train_size": 200,                  # 训练样本太少则跳过窗口
+
+        # 进度监控：每隔多少个窗口输出一次 INFO 日志（1 表示每个窗口都输出）
+        "progress_every_windows": 1,
     },
 
     # -----------------------------
@@ -177,9 +188,9 @@ RUN: Dict[str, Any] = {
         "methods": ["permutation", "treeshap_xgb", "treeshap_lgbm"],
         "top_k": 20,
         "top_k_lines": 8,
-        "normalize": "abs_sum_to_one",
-        "smooth_windows": 1,
-        "formats": ["png"],
+        "normalize": "abs_sum_to_one",   # "none" | "sum_to_one" | "abs_sum_to_one"
+        "smooth_windows": 1,              # 1=不平滑；3/5=轻度平滑
+        "formats": ["png"],             # 可加 "pdf" 直接用于论文
     },
 
     # -----------------------------
