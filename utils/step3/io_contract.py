@@ -2,16 +2,19 @@
 """Step3 输入契约校验工具
 
 设计目标
-- Step3 只读取 Step1/Step2 的产出文件；因此必须在最早阶段做校验，避免“文件存在但内容异常”导致整条流水线结果不可用。
+- Step3 只读取 Step1/Step2 的产出文件，因此必须在最早阶段做校验，避免“文件存在但内容异常”导致整条流水线结果不可用。
 
 校验内容
 1) Step2 predictions_*.csv
    - 必须包含：date, y_true, y_pred
    - date 可解析为 datetime，严格升序且无重复
 2) （可选）y_true 与 Step1 数据集中 USD_{H} 的对齐检查
-   - 抽样比对 date 对齐后的数值差
+   - 按 date 对齐后，抽样比较数值差异
 
-注：所有注释采用中文（按小组规范）。
+数值对齐容忍度
+- 默认 max_abs_diff=1e-8（更贴近 CSV/Excel 往返时可能出现的浮点舍入误差）
+
+所有注释采用中文（按小组规范）。
 """
 
 from __future__ import annotations
@@ -44,7 +47,6 @@ def read_predictions_csv(path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"预测文件不存在: {p}")
 
     df = pd.read_csv(p, encoding="utf-8")
-    # 兼容可能的列名大小写差异
     for c in REQUIRED_PRED_COLS:
         if c not in df.columns:
             raise KeyError(f"预测文件缺少必要列 {c}: {p} | columns={list(df.columns)}")
@@ -70,15 +72,12 @@ def validate_predictions_df(df: pd.DataFrame, path_hint: str = "") -> ContractRe
     if n_missing_date > 0:
         return ContractReport(False, f"date 解析失败（存在 NaT）| {path_hint}", n_rows, n_missing_date, n_missing_y_true, n_missing_y_pred)
 
-    # 日期严格升序
     if not df["date"].is_monotonic_increasing:
         return ContractReport(False, f"date 非升序（需要按日期排序）| {path_hint}", n_rows, n_missing_date, n_missing_y_true, n_missing_y_pred)
 
-    # 无重复
     if df["date"].duplicated().any():
         return ContractReport(False, f"date 存在重复值（同一天出现多行）| {path_hint}", n_rows, n_missing_date, n_missing_y_true, n_missing_y_pred)
 
-    # 缺失值
     if n_missing_y_true > 0 or n_missing_y_pred > 0:
         return ContractReport(False, f"y_true 或 y_pred 存在缺失值 | {path_hint}", n_rows, n_missing_date, n_missing_y_true, n_missing_y_pred)
 
@@ -89,7 +88,7 @@ def check_y_true_alignment(
     pred_df: pd.DataFrame,
     step1_df: pd.DataFrame,
     y_col_step1: str,
-    max_abs_diff: float = 1e-10,
+    max_abs_diff: float = 1e-8,
     sample_n: Optional[int] = 200,
     random_state: int = 42,
 ) -> Tuple[bool, str]:

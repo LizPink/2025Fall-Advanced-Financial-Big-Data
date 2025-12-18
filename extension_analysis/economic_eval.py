@@ -2,7 +2,7 @@
 """Step3 经济层检验（Economic Layer）
 
 输入
-- Step2 的 predictions_{model}_H{H}.csv：date, y_true, y_pred
+- Step2 的 predictions_{model}_H{H}.csv：至少包含 date, y_true, y_pred
 
 输出
 - datasets/econ_trades_long.csv：交易级别长表（供 VIX / 可视化复用）
@@ -15,6 +15,11 @@
 - 策略仓位 pos_t：由 y_pred 与阈值 tau 决定（-1/0/1 或 0/1）
 - 交易成本 cost_t：按仓位变化计费 cost_t = tc * |pos_t-pos_{t-1}|
   其中 tc = tc_bps/10000（bps -> 对数收益近似扣减）
+
+年化说明
+- Step3 默认使用“非重叠持有期”评估：每 H 天形成一笔交易，因此一年约有 annual_days/H 笔交易。
+- 若配置为重叠持有期（use_non_overlapping=False），序列为“日频产生的 H 日持有期收益”，年化缩放将使用 sqrt(annual_days)。
+  该口径为工程侧的统一缩放，严谨统计检验（例如 HAC）可作为后续可选扩展。
 
 所有注释采用中文。
 """
@@ -63,12 +68,17 @@ def _compute_cost(pos: np.ndarray, tc_bps: float) -> np.ndarray:
     return tc * dp
 
 
-def _max_drawdown_from_log_returns(r: np.ndarray) -> float:
-    """由对数收益序列计算最大回撤（基于累计净值 exp(cumsum(r))）。"""
+def _equity_from_log_returns(r: np.ndarray) -> np.ndarray:
+    """由对数收益得到累计净值序列 exp(cumsum(r))。"""
     r = np.asarray(r, dtype=float)
-    if len(r) == 0:
+    return np.exp(np.cumsum(r)) if len(r) else np.asarray([], dtype=float)
+
+
+def _max_drawdown_from_log_returns(r: np.ndarray) -> float:
+    """由对数收益序列计算最大回撤（基于累计净值）。"""
+    eq = _equity_from_log_returns(r)
+    if len(eq) == 0:
         return float("nan")
-    eq = np.exp(np.cumsum(r))
     peak = np.maximum.accumulate(eq)
     dd = (eq / peak) - 1.0
     return float(np.min(dd))
@@ -86,6 +96,23 @@ def _sharpe_ann_from_log_returns(r: np.ndarray, annual_scale: float) -> float:
     return float(mu / sd * float(annual_scale))
 
 
+def _annual_scale(annual_days: int, H: int, use_non_overlapping: bool) -> float:
+    """统一年化缩放。
+
+    - 非重叠：每 H 天一笔交易 -> 交易频率 annual_days/H
+    - 重叠：每天产生一笔 H 日持有期收益（重叠）-> 交易频率 annual_days
+
+    注意：重叠口径下序列存在相关性，该缩放仅用于工程层统一展示。
+    """
+    annual_days = int(annual_days)
+    H = int(max(1, H))
+    if bool(use_non_overlapping):
+        trades_per_year = float(annual_days) / float(H)
+    else:
+        trades_per_year = float(annual_days)
+    return math.sqrt(max(trades_per_year, 1.0))
+
+
 def compute_econ_metrics(
     dates: np.ndarray,
     y_true: np.ndarray,
@@ -96,6 +123,7 @@ def compute_econ_metrics(
     allow_short: bool,
     tc_bps: float,
     annual_days: int,
+    use_non_overlapping: bool,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """计算交易序列与经济指标。
 
@@ -136,8 +164,7 @@ def compute_econ_metrics(
         "r_net": r_net,
     })
 
-    # 年化系数：每笔交易跨度 H 日，频率约为 annual_days/H
-    ann_scale = math.sqrt(float(annual_days) / float(max(1, H)))
+    ann_scale = _annual_scale(annual_days=annual_days, H=H, use_non_overlapping=use_non_overlapping)
 
     mdd = _max_drawdown_from_log_returns(r_net)
     sharpe = _sharpe_ann_from_log_returns(r_net, annual_scale=ann_scale)
@@ -155,11 +182,11 @@ def compute_econ_metrics(
         "tc_bps": float(tc_bps),
         "allow_short": bool(allow_short),
         "tau": float(tau),
+        "annual_scale": float(ann_scale),
+        "annualize_mode": "non_overlapping" if bool(use_non_overlapping) else "overlapping_daily",
     }
 
     return trades, metrics
-
-
 
 
 def run_economic_layer(
@@ -245,6 +272,7 @@ def run_economic_layer(
                     allow_short=allow_short,
                     tc_bps=tc_bps,
                     annual_days=annual_days,
+                    use_non_overlapping=use_non_overlapping,
                 )
 
                 if bool(cfg.get("save_trades_long", True)):
@@ -310,6 +338,7 @@ def run_economic_layer(
                         allow_short=allow_short,
                         tc_bps=tc_bps,
                         annual_days=annual_days,
+                        use_non_overlapping=use_non_overlapping,
                     )
 
                     if bool(cfg.get("save_trades_long", True)):
@@ -423,7 +452,7 @@ def run_economic_layer(
                     if len(sub) == 0:
                         continue
 
-                    eq = np.exp(np.cumsum(sub["r_net"].to_numpy(dtype=float)))
+                    eq = _equity_from_log_returns(sub["r_net"].to_numpy(dtype=float))
                     ax.plot(sub["date"].to_numpy(), eq, label=str(strategy))
 
                 ax.set_title(f"资金曲线 | model={model} | H={H} | tau={tau} | phase={plot_phase}")

@@ -8,6 +8,8 @@
 约定
 - Manifest 存放在 output/step3/meta/run_manifest.json
 - Config 快照存放在 output/step3/meta/config_snapshot.json
+
+所有注释采用中文（按小组规范）。
 """
 
 from __future__ import annotations
@@ -116,6 +118,7 @@ def build_manifest_base(
             "vix_regime": cfg.get("vix_regime", {}),
             "rolling_importance": cfg.get("rolling_importance", {}),
             "rolling_importance_plots": cfg.get("rolling_importance_plots", {}),
+            "io_contract": cfg.get("io_contract", {}),
         },
         "outputs": {
             "tables": [],
@@ -136,13 +139,12 @@ def build_manifest_base(
 
 
 def register_outputs(manifest: Dict[str, Any], category: str, paths: List[str]) -> None:
-    """把输出文件路径注册到 manifest。"""
+    """把输出文件路径注册到 manifest（去重、保持顺序）。"""
     if "outputs" not in manifest:
         manifest["outputs"] = {}
     if category not in manifest["outputs"]:
         manifest["outputs"][category] = []
 
-    # 去重并保持顺序
     exist = set(manifest["outputs"][category])
     for p in paths:
         p = str(p)

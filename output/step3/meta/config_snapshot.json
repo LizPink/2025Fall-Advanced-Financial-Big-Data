@@ -12,7 +12,14 @@
     "DejaVu Sans"
   ],
   "selection": {
-    "models_include": "ALL",
+    "models_include": [
+      "Lasso",
+      "Ridge",
+      "ElasticNet",
+      "RandomForest",
+      "XGBoost",
+      "LightGBM"
+    ],
     "models_exclude": [],
     "H_include": "ALL",
     "H_exclude": []
@@ -51,6 +58,7 @@
     "plot_strategies": [
       "model",
       "always_long",
+      "always_short",
       "cash"
     ]
   },
@@ -81,19 +89,26 @@
     "plot_top_n": 3
   },
   "rolling_importance": {
-    "enable": true,
+    "enable": false,
     "window": 252,
     "step": 21,
     "sample_n": 500,
     "n_repeats": 3,
     "random_state": 42,
-    "only_models": null,
+    "only_models": [
+      "Lasso",
+      "Ridge",
+      "ElasticNet",
+      "RandomForest",
+      "XGBoost",
+      "LightGBM"
+    ],
     "enable_treeshap_for_tree_models": true,
     "max_windows": null,
     "min_train_size": 200
   },
   "rolling_importance_plots": {
-    "enable": true,
+    "enable": false,
     "methods": [
       "permutation",
       "treeshap_xgb",

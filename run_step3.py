@@ -5,10 +5,10 @@
 - 在项目根目录执行：python run_step3.py
 
 说明
-- Step3 的主体逻辑在 extension_analysis/pipeline.py
-- Step3 的配置在 configs/config_step3.py
+- Step3 主逻辑在 extension_analysis/pipeline.py
+- Step3 配置在 configs/config_step3.py
 
-所有注释采用中文。
+所有注释采用中文（按小组规范）。
 """
 
 from extension_analysis.pipeline import main
