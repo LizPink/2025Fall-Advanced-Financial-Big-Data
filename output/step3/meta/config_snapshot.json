@@ -1,0 +1,129 @@
+{
+  "step1_dataset_dir": "../output/step1/datasets",
+  "step2_output_dir": "../output/step2",
+  "output_dir": "../output/step3",
+  "inherit_step2_snapshot": true,
+  "log_level": "INFO",
+  "cn_font_candidates": [
+    "SimHei",
+    "Microsoft YaHei",
+    "Arial Unicode MS",
+    "Noto Sans CJK SC",
+    "DejaVu Sans"
+  ],
+  "selection": {
+    "models_include": [
+      "Lasso",
+      "Ridge",
+      "ElasticNet",
+      "RandomForest",
+      "XGBoost",
+      "LightGBM"
+    ],
+    "models_exclude": [],
+    "H_include": "ALL",
+    "H_exclude": []
+  },
+  "smoke_test": {
+    "enable": false,
+    "max_models": 2,
+    "max_windows": 3
+  },
+  "io_contract": {
+    "enable": true,
+    "check_y_true_alignment": true,
+    "alignment_max_abs_diff": 1e-10,
+    "alignment_sample_n": 200
+  },
+  "economic": {
+    "enable": true,
+    "allow_short": true,
+    "tau_list": [
+      0.0,
+      0.0005,
+      0.001
+    ],
+    "tc_bps": 1.0,
+    "annual_days": 252,
+    "use_non_overlapping": true,
+    "phase_sweep": true,
+    "baselines": [
+      "cash",
+      "always_long",
+      "always_short"
+    ],
+    "save_trades_long": true,
+    "save_equity_fig": true,
+    "plot_phase": 0,
+    "plot_strategies": [
+      "model",
+      "always_long",
+      "cash"
+    ]
+  },
+  "vix_regime": {
+    "enable": true,
+    "vix_col": "VIX",
+    "methods": [
+      "conditional",
+      "episode"
+    ],
+    "regime_on": "entry",
+    "mode": "quantile",
+    "threshold_source": "train_only",
+    "quantiles": {
+      "enter_low": 0.3,
+      "exit_low": 0.4,
+      "enter_high": 0.7,
+      "exit_high": 0.6
+    },
+    "fixed_thresholds": {
+      "enter_low": 15.0,
+      "exit_low": 18.0,
+      "enter_high": 25.0,
+      "exit_high": 22.0
+    },
+    "min_spell_days": 5,
+    "save_equity_shading_fig": true,
+    "plot_top_n": 0
+  },
+  "rolling_importance": {
+    "enable": true,
+    "window": 252,
+    "step": 21,
+    "sample_n": 500,
+    "n_repeats": 3,
+    "random_state": 42,
+    "only_models": [
+      "Lasso",
+      "Ridge",
+      "ElasticNet",
+      "RandomForest",
+      "XGBoost",
+      "LightGBM"
+    ],
+    "enable_treeshap_for_tree_models": true,
+    "max_windows": null,
+    "min_train_size": 200,
+    "progress_every_windows": 1
+  },
+  "rolling_importance_plots": {
+    "enable": true,
+    "methods": [
+      "permutation",
+      "treeshap_xgb",
+      "treeshap_lgbm"
+    ],
+    "top_k": 20,
+    "top_k_lines": 8,
+    "normalize": "abs_sum_to_one",
+    "smooth_windows": 1,
+    "formats": [
+      "png"
+    ]
+  },
+  "manifest": {
+    "enable": true,
+    "capture_versions": true
+  }
+}
